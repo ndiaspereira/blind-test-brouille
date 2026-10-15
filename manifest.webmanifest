@@ -1,0 +1,17 @@
+{
+  "name": "Brouillé · le blind test qui déraille",
+  "short_name": "Brouillé",
+  "description": "Blind test entre amis : chaque extrait passe dans une pédale d’effet.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1B1628",
+  "theme_color": "#1B1628",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

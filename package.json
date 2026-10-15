@@ -1,0 +1,6 @@
+{
+  "name": "blind-test-brouille",
+  "private": true,
+  "type": "module",
+  "description": "Blind test entre amis : les extraits passent dans des pédales d'effet."
+}

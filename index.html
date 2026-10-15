@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Brouillé · le blind test qui déraille</title>
+<meta name="description" content="Blind test entre amis : chaque extrait passe dans une pédale d’effet. Tire ta carte et trouve le titre.">
+<meta name="theme-color" content="#1B1628">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Brouillé">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=Schibsted+Grotesk:wght@400;600;800&family=Shrikhand&display=swap">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<div class="app">
+
+<section id="home" class="screen">
+  <header class="hero">
+    <span class="label">Blind test entre amis</span>
+    <h1 class="logo" aria-label="Brouillé"><span style="--r:-6deg">B</span><span style="--r:4deg;--y:4px">r</span><span style="--r:-3deg;--y:-2px">o</span><span style="--r:7deg;--y:3px">u</span><span style="--r:-5deg">i</span><span style="--r:3deg;--y:-3px">l</span><span style="--r:-8deg;--y:2px">l</span><span style="--r:6deg;--y:-1px">é</span></h1>
+    <p class="tagline">Le blind test qui déraille.</p>
+    <p class="intro">Chacun son tour, tu tires une carte. L’extrait passe dans une pédale d’effet, et tu dois trouver le titre avant la fin du disque.</p>
+  </header>
+
+  <div class="block">
+    <button class="play" id="play">Nouvelle partie</button>
+    <p class="small muted center">De 1 à 8 joueurs sur un seul téléphone. Sur iPhone, coupe le mode silencieux.</p>
+  </div>
+
+  <div class="block">
+    <span class="label">Les cartes du paquet</span>
+    <div class="kinds">
+      <div class="kind"><i style="--c:#1FC8B0;--t:#04231E">P</i><div><b>Pédale</b><span>Une pédale déforme l’extrait. Tu dis ta réponse à voix haute, les autres valident.</span></div><em>2 pts</em></div>
+      <div class="kind"><i class="rainbow" style="--t:#1B1628">C</i><div><b>Chaos</b><span>Les pédales changent toutes les 3 secondes.</span></div><em>3 pts</em></div>
+      <div class="kind"><i style="--c:#FFC93C;--t:#2A1F05">?</i><div><b>Chance</b><span>Quatre propositions s’affichent, à toi de choisir.</span></div><em>1 pt</em></div>
+    </div>
+  </div>
+
+  <section class="lab" aria-labelledby="labtitle">
+    <div class="labhead">
+      <h2 class="h2" id="labtitle">Le labo des pédales</h2>
+      <p class="muted">Touche une pédale pour l’écouter sur un morceau d’essai. Touche-la encore pour couper le son.</p>
+    </div>
+    <div class="testtune">
+      <span><span class="label">Morceau d’essai</span><br><b id="labtune">Frère Jacques</b></span>
+      <button id="labnext">Changer</button>
+    </div>
+    <div class="board" id="board"></div>
+  </section>
+
+  <p class="small muted center credits">Extraits musicaux fournis par Deezer.</p>
+</section>
+
+<section id="setup" class="screen" hidden>
+  <header class="hero">
+    <span class="label">Nouvelle partie</span>
+    <h2 class="h2">Qui joue ?</h2>
+  </header>
+  <ol class="players" id="players"></ol>
+  <button class="ghost" id="addPlayer">Ajouter un joueur</button>
+
+  <div class="block music">
+    <span class="label" id="srclbl">La musique</span>
+    <div class="themes" id="themes" role="radiogroup" aria-labelledby="srclbl"></div>
+    <form class="search" id="search" role="search">
+      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Artiste, style ou lien Deezer" aria-label="Chercher une playlist Deezer ou coller un lien">
+      <button type="submit" aria-label="Chercher"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+    </form>
+    <div class="results" id="results" hidden></div>
+    <p class="srcinfo" id="srcinfo" aria-live="polite"></p>
+    <input id="files" class="vh" type="file" accept="audio/*" multiple tabindex="-1" aria-hidden="true">
+  </div>
+
+  <div class="block">
+    <span class="label" id="roundslbl">Nombre de tours</span>
+    <div class="speed" role="radiogroup" aria-labelledby="roundslbl">
+      <button role="radio" aria-checked="true" data-rounds="3"><span class="led"></span><b>3 tours</b><small>rapide</small></button>
+      <button role="radio" aria-checked="false" data-rounds="5"><span class="led"></span><b>5 tours</b><small>classique</small></button>
+      <button role="radio" aria-checked="false" data-rounds="8"><span class="led"></span><b>8 tours</b><small>marathon</small></button>
+    </div>
+  </div>
+  <button class="play" id="startParty">C’est parti</button>
+  <button class="ghost" id="setupBack">Retour</button>
+</section>
+
+<section id="draw" class="screen" hidden>
+  <div class="scores" id="scores"></div>
+  <div class="turnhead">
+    <span class="label" id="turnlbl">Tour 1 sur 3</span>
+    <h2 class="who" id="who">À toi !</h2>
+  </div>
+  <button class="deck" id="deck" aria-label="Tirer une carte">
+    <span class="card"><span class="face back"><span class="backlogo">B</span></span><span class="face front" id="front"></span></span>
+  </button>
+  <p class="center muted" id="drawhint">Touche le paquet pour tirer ta carte.</p>
+  <button class="play" id="listen" hidden>Écouter l’extrait</button>
+  <button class="ghost" id="quit">Arrêter la partie</button>
+</section>
+
+<section id="game" class="screen" hidden>
+  <header class="hud">
+    <div><span class="label">Joueur</span><b id="hudName">Joueur 1</b></div>
+    <div class="mid"><span class="label">Temps</span><b id="clock">30 s</b></div>
+    <div class="end"><span class="label">Points</span><b id="score">0</b></div>
+  </header>
+
+  <div class="turntable" aria-hidden="true">
+    <svg class="ring" viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="56"></circle><circle class="prog" id="ring" cx="60" cy="60" r="56"></circle></svg>
+    <div class="vinyl" id="vinyl"><div class="vlabel" id="vlabel"><small>BROUILLÉ</small><i></i><small>33⅓</small></div></div>
+    <div class="sheen"></div>
+  </div>
+
+  <div class="big" id="big">
+    <div class="bigtop">
+      <span class="knobs"><i class="knob" style="--r:-40deg"></i><i class="knob" style="--r:25deg"></i><i class="knob" style="--r:70deg"></i></span>
+      <span class="led" id="bigled"></span>
+    </div>
+    <div class="bigname" id="bigname" aria-live="polite">Préparation…</div>
+    <p class="bigdesc" id="bigdesc">On branche les câbles.</p>
+    <div class="bigfoot"><span id="nextIn"></span><span class="foot"></span></div>
+    <div class="fxbar"><i id="fxbar"></i></div>
+  </div>
+
+  <div class="chainrow" id="chainrow"><span class="label">Entendues</span><div class="chain" id="chain"></div></div>
+  <div class="answers" id="answers"></div>
+  <button class="play" id="know">Je sais !</button>
+</section>
+
+<section id="end" class="screen" hidden>
+  <span class="label">Fin de partie</span>
+  <h2 class="winner" id="winner"></h2>
+  <ol class="podium" id="podium"></ol>
+  <button class="play" id="again">Revanche</button>
+  <button class="ghost" id="backHome">Retour à l’accueil</button>
+</section>
+
+</div>
+
+<div class="sheet" id="sheet" role="dialog" aria-labelledby="verdict" hidden>
+  <div class="inner">
+    <p class="verdict" id="verdict"></p>
+    <div class="reveal" id="reveal"></div>
+    <p class="stats" id="stats"></p>
+    <div class="chips" id="heard"></div>
+    <div class="judge" id="judge" hidden><button class="play good" id="judgeYes">Trouvé !</button><button class="ghost" id="judgeNo">Raté</button></div>
+    <button class="play" id="nextBtn">Joueur suivant</button>
+  </div>
+</div>
+</body>
+</html>
