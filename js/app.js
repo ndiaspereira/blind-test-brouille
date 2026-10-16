@@ -3,7 +3,7 @@ import {AC, normalize, mixBuffers} from './audio.js';
 import {TUNES, renderTune} from './music.js';
 import {FX, hasSide} from './fx.js';
 import {Player} from './player.js';
-import {THEMES, themeTracks, tracks, playlistInfo, searchPlaylists, playlistFromLink, looksLikeLink, loadPreview} from './deezer.js';
+import {THEMES, themeTracks, tracks, playlistInfo, searchPlaylists, searchTracks, playlistFromLink, looksLikeLink, loadPreview} from './deezer.js';
 
 const $ = id => document.getElementById(id);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -93,7 +93,7 @@ function renderSources(){
   $('themes').innerHTML = allSources().map(s => `<button type="button" class="theme" role="radio" data-src="${esc(s.id)}" aria-checked="${src === s}">${esc(s.name)}${s.note ? `<small>${esc(s.note)}</small>` : ''}</button>`).join('');
 }
 function info(text, cls = ''){ $('srcinfo').className = 'srcinfo ' + cls; $('srcinfo').textContent = text; }
-function ready(songs){ pool = songs; $('startParty').disabled = !songs; if(mix === 'pick' && [mixA, mixB].includes('main')) mixInfo(); }
+function ready(songs){ pool = songs; updateStart(); levelInfo(); if(mix === 'pick' && [mixA, mixB].includes('main')) mixInfo(); }
 const extraits = n => `${n} extrait${n > 1 ? 's' : ''}`;
 
 async function selectSource(s, auto = false){
@@ -190,7 +190,7 @@ function styleOf(id){
   if(id === 'main') return {id, name: src ? src.name : 'Musique de la partie', songs: () => (party ? party.pool : pool) || []};
   if(id === 'tunes') return {id, name: 'Airs connus', songs: () => TUNES};
   const s = SOURCES.find(x => x.id === id);
-  return {id, name: s.name, songs: () => loadList(s)};
+  return {id, name: s.name, songs: () => loadList(s).then(l => byLevel(l, party ? party.level : level))};
 }
 async function mixInfo(){
   const el = $('mixinfo'), token = ++mixToken;
@@ -212,6 +212,38 @@ document.querySelectorAll('[data-mix]').forEach(b => b.addEventListener('click',
 $('mixA').addEventListener('change', e => { mixA = e.target.value; store.set('mixA', mixA); mixInfo(); });
 $('mixB').addEventListener('change', e => { mixB = e.target.value; store.set('mixB', mixB); mixInfo(); });
 
+/* ================= Mode : automatique (morceaux tirés au sort) ou manuel (un maître du jeu choisit) ================= */
+let gameMode = store.get('mode', 'auto');
+if(!['auto', 'manual'].includes(gameMode)) gameMode = 'auto';
+function updateStart(){ $('startParty').disabled = gameMode === 'auto' && !pool; }
+function renderMode(){
+  document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === gameMode)));
+  document.querySelectorAll('#setup .auto').forEach(el => { el.hidden = gameMode !== 'auto'; });
+  $('manualnote').hidden = gameMode !== 'manual';
+  updateStart();
+}
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { gameMode = b.dataset.mode; store.set('mode', gameMode); renderMode(); }));
+
+/* Niveau : les morceaux sont classés par popularité Deezer, chaque niveau garde sa tranche (du plus écouté au moins écouté) */
+const LEVELS = ['', 'les plus gros tubes', 'des chansons connues', 'des chansons moins connues', 'les chansons les plus pointues'];
+let level = store.get('level', 1);
+if(![1, 2, 3, 4].includes(level)) level = 1;
+function byLevel(songs, lv){
+  if(!songs || !songs.some(s => s.rank)) return songs || [];
+  const sorted = songs.slice().sort((a, b) => b.rank - a.rank), n = sorted.length;
+  const size = Math.min(n, Math.max(8, Math.ceil(n / 4))), start = Math.round((n - size) * (lv - 1) / 3);
+  return sorted.slice(start, start + size);
+}
+function levelInfo(){
+  const el = $('lvlinfo');
+  if(!pool){ el.className = 'srcinfo'; el.textContent = ''; return; }
+  if(!pool.some(s => s.rank)){ el.className = 'srcinfo'; el.textContent = 'Le niveau ne change rien pour les airs connus et tes MP3.'; return; }
+  el.className = 'srcinfo ok';
+  el.textContent = `${extraits(byLevel(pool, level).length)} : ${LEVELS[level]} de « ${src.name} ».`;
+}
+function renderLevel(){ document.querySelectorAll('[data-level]').forEach(b => b.setAttribute('aria-checked', String(+b.dataset.level === level))); levelInfo(); }
+document.querySelectorAll('[data-level]').forEach(b => b.addEventListener('click', () => { level = +b.dataset.level; store.set('level', level); renderLevel(); }));
+
 /* ================= Partie ================= */
 const TURN_TIME = 30, CHAOS_EVERY = 3, CIRC = 351.86;
 const KINDS = {
@@ -222,15 +254,15 @@ const KINDS = {
 };
 let party = null, turn = null, busy = false;
 
-function show(id){ cleanStop(); ['home', 'setup', 'draw', 'game', 'end'].forEach(s => { $(s).hidden = s !== id; }); $('sheet').hidden = true; window.scrollTo(0, 0); }
+function show(id){ cleanStop(); ['home', 'setup', 'master', 'draw', 'game', 'end'].forEach(s => { $(s).hidden = s !== id; }); $('sheet').hidden = true; window.scrollTo(0, 0); }
 const bump = el => { if(reduced) return; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); };
 const chips = list => list.map(f => `<span class="chip"><i style="--c:${f.c}"></i>${esc(f.name)}</span>`).join('');
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
 
-$('play').addEventListener('click', () => { AC(); labStop(); show('setup'); initSource(); renderMix(); });
+$('play').addEventListener('click', () => { AC(); labStop(); show('setup'); initSource(); renderMode(); renderLevel(); renderMix(); });
 $('setupBack').addEventListener('click', () => show('home'));
 $('startParty').addEventListener('click', () => {
-  if(!pool) return;
+  if(gameMode === 'auto' && !pool) return;
   AC();
   store.set('names', names); store.set('rounds', rounds);
   startParty(names.map((n, i) => n.trim() || `Joueur ${i + 1}`));
@@ -250,11 +282,12 @@ const release = s => { if(s && s.preview) s.buffer = null; };
 const prefetch = () => { const up = party && party.queue[0]; if(up) getBuffer(up).catch(() => {}); };
 
 function startParty(list){
-  if(!pool || !pool.length) return;
-  const tunes = pool === TUNES;
+  const manual = gameMode === 'manual';
+  if(!manual && (!pool || !pool.length)) return;
+  const tunes = !manual && pool === TUNES, songs = manual ? [] : byLevel(pool, level);
   party = {players: list.map((name, i) => ({name, score: 0, found: 0, col: PCOL[i % PCOL.length]})), rounds, total: list.length * rounds, n: 0,
-    pool: pool.slice(), queue: tunes ? planned.slice() : shuffle(pool), lastSong: null, lastFx: null, bumped: null,
-    mix: mix === 'off' ? null : {mode: mix, a: mixA, b: mixB}, hadMix: false, used: new Set(), next: null, nextMix: null};
+    manual, level, plan: null, pool: songs, queue: tunes ? planned.slice() : shuffle(songs), lastSong: null, lastFx: null, bumped: null,
+    mix: manual || mix === 'off' ? null : {mode: mix, a: mixA, b: mixB}, hadMix: false, used: new Set(), next: null, nextMix: null};
   if(tunes) planned = shuffle(TUNES);
   prepareDraw();
 }
@@ -322,6 +355,7 @@ function renderScores(){
 function prepareDraw(){
   if(party.n >= party.total){ endParty(); return; }
   turn = null;
+  if(party.manual && !party.plan){ showMaster(); return; }
   const p = current();
   show('draw');
   $('turnlbl').textContent = `Tour ${Math.floor(party.n / party.players.length) + 1} sur ${party.rounds}`;
@@ -330,6 +364,7 @@ function prepareDraw(){
   $('deck').classList.remove('drawn'); $('deck').disabled = false;
   $('drawhint').hidden = false; $('drawhint').textContent = 'Touche le paquet pour tirer ta carte.';
   $('listen').hidden = true;
+  if(party.manual) return;
   party.next = rollKind();
   if(party.next === 'mashup'){ party.nextMix = planMashup(); party.nextMix.catch(() => {}); }
   else prefetch();
@@ -341,37 +376,52 @@ $('deck').addEventListener('click', async () => {
   const slow = setTimeout(() => { $('drawhint').textContent = 'Chargement de l’extrait…'; }, 700);
   try{
     AC();
-    let kind = party.next || rollKind(), plan = null;
-    if(kind === 'mashup'){
-      try{ plan = await (party.nextMix || planMashup()); }catch(e){ kind = 'fx'; } // pas de mashup possible : carte pédale
-    }
-    party.next = null; party.nextMix = null;
-    let songs, raw, buf = null;
-    if(plan){ ({songs, raw, buf} = plan); party.hadMix = true; }
-    else {
-      let song = null;
-      for(let tries = 0; tries < 4 && !buf && party.pool.length; tries++){
-        song = nextSong(); if(!song) break;
-        try{ buf = await getBuffer(song); }
-        catch(e){ if(!song.melody) dropSong(song); else throw e; }
-      }
-      if(!buf) throw new Error('aucun extrait');
-      songs = [song]; raw = [buf];
-    }
-    const fxs = FX.filter(f => !f.stereo || (!plan && hasSide(buf)));
+    const d = party.manual ? await drawManual() : await drawAuto(), {kind, songs, buf} = d;
+    const fxs = FX.filter(f => !f.stereo || (songs.length === 1 && hasSide(buf)));
     let fx = null;
-    if(kind !== 'chaos'){ do { fx = fxs[Math.random() * fxs.length | 0]; } while(fxs.length > 1 && fx === party.lastFx); party.lastFx = fx; }
+    if(kind !== 'chaos'){
+      if(d.chosen && fxs.includes(d.chosen)) fx = d.chosen;
+      else do { fx = fxs[Math.random() * fxs.length | 0]; } while(fxs.length > 1 && fx === party.lastFx);
+      party.lastFx = fx;
+    }
     songs.forEach(s => party.used.add(keyOf(s)));
-    turn = {kind, song: songs[0], songs, raw, styles: plan && plan.styles, buf, fx, pool: fxs, player: current()};
+    turn = {kind, song: songs[0], songs, raw: d.raw, styles: d.styles, buf, fx, pool: fxs, player: current()};
     renderCard(turn);
     $('deck').classList.add('drawn'); $('drawhint').hidden = true;
     const t = turn;
     setTimeout(() => { if(turn === t && !t.started){ $('listen').hidden = false; $('listen').focus({preventScroll: true}); } }, reduced ? 0 : 650);
   } catch(e){
+    if(party.manual){ party.plan = null; prepareDraw(); minfo('Un extrait ne se charge pas. Choisis un autre morceau.', 'err'); return; }
     $('drawhint').textContent = party.pool.length ? 'L’extrait n’a pas pu être chargé. Vérifie ta connexion et touche encore le paquet.' : 'Plus aucun extrait ne répond. Arrête la partie et choisis « Airs connus ».';
     $('deck').disabled = false;
   } finally { clearTimeout(slow); busy = false; }
 });
+/* Mode automatique : la carte tirée au sort, et un morceau de la pile (deux pour un mashup) */
+async function drawAuto(){
+  let kind = party.next || rollKind(), plan = null;
+  if(kind === 'mashup'){
+    try{ plan = await (party.nextMix || planMashup()); }catch(e){ kind = 'fx'; } // pas de mashup possible : carte pédale
+  }
+  party.next = null; party.nextMix = null;
+  if(plan){ party.hadMix = true; return {kind, ...plan}; }
+  let song = null, buf = null;
+  for(let tries = 0; tries < 4 && !buf && party.pool.length; tries++){
+    song = nextSong(); if(!song) break;
+    try{ buf = await getBuffer(song); }
+    catch(e){ if(!song.melody) dropSong(song); else throw e; }
+  }
+  if(!buf) throw new Error('aucun extrait');
+  return {kind, songs: [song], raw: [buf], buf};
+}
+/* Mode manuel : le morceau (ou les deux) et la pédale choisis par le maître du jeu */
+async function drawManual(){
+  const pl = party.plan, two = pl.songs.length > 1;
+  const raw = await Promise.all(pl.songs.map(getBuffer));
+  const buf = two ? await mixBuffers(raw[0], raw[1]) : raw[0];
+  party.plan = null;
+  return {kind: two ? 'mashup' : pl.fx === 'chaos' ? 'chaos' : 'fx', songs: pl.songs, raw, buf, chosen: FX.find(f => f.id === pl.fx)};
+}
+
 function renderCard(t){
   const k = KINDS[t.kind], face = t.kind === 'fx' ? t.fx : k, front = $('front');
   front.className = 'face front ' + t.kind + (t.kind === 'chaos' ? ' rainbow' : t.kind === 'mashup' ? ' split' : '');
@@ -505,7 +555,7 @@ function reveal(timeout){
   $('verdict').className = 'verdict';
   $('verdict').textContent = timeout ? 'Temps écoulé !' : `Alors, ${r.player.name} ?`;
   showSongs(r);
-  const who = party.players.length > 1 ? 'Les autres joueurs valident' : 'Sois honnête';
+  const who = party.manual ? 'Le maître du jeu valide' : party.players.length > 1 ? 'Les autres joueurs valident' : 'Sois honnête';
   $('stats').textContent = two ? `${who} · ${k.pts} points par chanson` : `${who} · ${plural(k.pts, 'point')} en jeu`;
   $('heard').innerHTML = chips(r.heard);
   $('judgeYes').textContent = `Trouvé ! +${k.pts}`;
@@ -547,7 +597,7 @@ function endParty(){
   turn = null;
   party.queue.forEach(release);
   if(party.nextMix) party.nextMix.then(m => m.songs.forEach(release), () => {});
-  party.next = party.nextMix = null;
+  party.next = party.nextMix = party.plan = null;
   show('end'); prepare([planned[0]]);
   const ranked = party.players.slice().sort((a, b) => b.score - a.score || b.found - a.found);
   const top = ranked[0], tie = ranked.length > 1 && ranked[1].score === top.score && ranked[1].found === top.found;
@@ -558,6 +608,83 @@ function endParty(){
     return `<li class="${rank === 1 ? 'first' : ''}"><span class="r" style="--c:${p.col[0]};--t:${p.col[1]}">${rank}</span><span class="n">${esc(p.name)}<small>${p.found} morceau${p.found > 1 ? 'x' : ''} trouvé${p.found > 1 ? 's' : ''}</small></span><span class="p">${p.score}</span></li>`;
   }).join('');
 }
+
+/* ================= Mode manuel : l'écran du maître du jeu ================= */
+const master = {picks: [], slot: 0, fx: 'random', found: [], token: 0};
+function minfo(text, cls = ''){ $('minfo').className = 'srcinfo ' + cls; $('minfo').textContent = text; }
+function showMaster(){
+  const p = current();
+  show('master');
+  $('mturn').textContent = `Tour ${Math.floor(party.n / party.players.length) + 1} sur ${party.rounds} · Maître du jeu`;
+  $('mwho').textContent = `Un morceau pour ${p.name}`;
+  $('mhide').textContent = `${p.name}, ne regarde pas l’écran !`;
+  master.picks = []; master.slot = 0; master.fx = 'random'; master.token++;
+  $('mq').value = ''; $('mresults').hidden = true; minfo('');
+  renderPicks(); renderFxChips();
+}
+function renderPicks(){
+  const two = master.picks.length > 1;
+  $('picked').innerHTML = master.picks.map((s, i) => `<div class="pick">${s.cover ? `<img class="cover" src="${esc(s.cover)}" alt="" width="52" height="52">` : '<span class="noimg"></span>'}<span><span class="label">${two ? `Chanson ${i + 1}` : 'À deviner'}</span><b>${esc(s.title)}</b><span class="by">${esc(s.artist)}</span></span><button type="button" class="premove" data-i="${i}" aria-label="Retirer ${esc(s.title)}">✕</button></div>`).join('');
+  $('addSecond').hidden = master.picks.length !== 1 || master.slot === 1;
+  $('mq').placeholder = master.slot === 1 ? 'La 2e chanson : titre ou artiste' : master.picks.length ? 'Changer : titre ou artiste' : 'Titre ou artiste';
+  $('mready').disabled = !master.picks.length;
+  $('mready').textContent = master.picks.length ? `C’est prêt, à ${current().name} !` : 'C’est prêt';
+}
+function renderFxChips(){
+  const two = master.picks.length > 1, one = master.picks.length === 1 ? master.picks[0] : null;
+  const stereo = !!(one && one.buffer && hasSide(one.buffer));   // le karaoké a besoin d'un vrai son stéréo
+  const opts = [{id: 'random', name: 'Au hasard', c: 'var(--ink)', desc: 'Une pédale tirée au sort.'},
+    ...FX.map(f => ({id: f.id, name: f.name, c: f.c, desc: f.desc, off: f.stereo && !stereo})),
+    {id: 'chaos', name: 'Chaos', rainbow: true, desc: 'Les pédales changent toutes les 3 secondes. 3 points.', off: two}];
+  if(opts.find(o => o.id === master.fx)?.off) master.fx = 'random';
+  $('mfx').innerHTML = opts.map(o => `<button type="button" class="fxchip" role="radio" data-fx="${o.id}" aria-checked="${master.fx === o.id}"${o.off ? ' disabled' : ''}><i${o.rainbow ? ' class="rainbow"' : ''} style="--c:${o.c || 'transparent'}"></i>${esc(o.name)}</button>`).join('');
+  $('mfxdesc').textContent = opts.find(o => o.id === master.fx).desc + (two ? ' Avec deux chansons, c’est une carte mashup : 2 points par chanson.' : '');
+}
+$('msearch').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('mq').value.trim(); if(!q) return;
+  $('mq').blur();
+  const token = ++master.token;
+  minfo('Recherche…', 'wait');
+  try{
+    const found = (await searchTracks(q)).slice(0, 8);
+    if(token !== master.token) return;
+    if(!found.length){ $('mresults').hidden = true; minfo(`Aucun extrait trouvé pour « ${q} ».`, 'err'); return; }
+    master.found = found;
+    $('mresults').innerHTML = found.map((s, i) => `<button type="button" class="res" data-i="${i}">${s.cover ? `<img src="${esc(s.cover)}" alt="" width="48" height="48" loading="lazy">` : '<span class="noimg"></span>'}<span><b>${esc(s.title)}</b><small>${esc(s.artist)}</small></span></button>`).join('');
+    $('mresults').hidden = false;
+    minfo('Touche le morceau à faire deviner.');
+  }catch(err){ if(token === master.token) minfo('Deezer ne répond pas. Réessaie dans un instant.', 'err'); }
+});
+$('mresults').addEventListener('click', e => {
+  const b = e.target.closest('.res'); if(!b) return;
+  const s = master.found[+b.dataset.i];
+  if(master.picks.some(x => x.id === s.id)) return;
+  const at = Math.min(master.slot, master.picks.length);
+  release(master.picks[at]); master.picks[at] = s; master.slot = 0;
+  $('mresults').hidden = true; $('mq').value = ''; minfo('');
+  renderPicks(); renderFxChips();
+  AC();
+  getBuffer(s).then(() => renderFxChips(), () => {   // on charge tout de suite : le tour démarrera sans attendre
+    if(!master.picks.includes(s)) return;
+    master.picks = master.picks.filter(x => x !== s); renderPicks(); renderFxChips();
+    minfo(`L’extrait de « ${s.title} » ne se charge pas. Choisis-en un autre.`, 'err');
+  });
+});
+$('picked').addEventListener('click', e => {
+  const b = e.target.closest('.premove'); if(!b) return;
+  release(master.picks.splice(+b.dataset.i, 1)[0]); master.slot = 0;
+  renderPicks(); renderFxChips();
+});
+$('addSecond').addEventListener('click', () => { master.slot = 1; renderPicks(); $('mq').focus(); });
+$('mfx').addEventListener('click', e => { const b = e.target.closest('.fxchip'); if(!b || b.disabled) return; master.fx = b.dataset.fx; renderFxChips(); });
+$('mready').addEventListener('click', () => {
+  if(!master.picks.length) return;
+  AC();
+  party.plan = {songs: master.picks.slice(), fx: master.fx};
+  prepareDraw();
+});
+$('mquit').addEventListener('click', () => { if(party){ master.picks.forEach(release); endParty(); } });
 
 /* ================= Installation sur l'écran d'accueil ================= */
 if('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')){
