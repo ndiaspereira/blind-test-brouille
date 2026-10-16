@@ -2,6 +2,11 @@
 
 Un blind test entre amis, sur un seul téléphone. Chacun son tour, on tire une carte, et l’extrait passe dans une pédale d’effet (hélium, à l’envers, disque rayé, karaoké…). Il faut trouver le titre avant la fin du disque.
 
+## Deux modes
+
+- **Automatique** : les morceaux sont tirés au sort dans la musique choisie, avec 4 niveaux de difficulté : Facile (les plus gros tubes), Moyen, Difficile et Expert (les chansons les plus pointues). Le niveau s’appuie sur la popularité des morceaux sur Deezer, à l’intérieur de la musique choisie.
+- **Manuel** : un maître du jeu, qui ne joue pas, cherche à chaque tour le morceau à faire deviner sur Deezer et choisit sa pédale (ou Chaos, ou au hasard). Il peut aussi ajouter une 2e chanson pour faire un mashup. Puis il passe le téléphone au joueur, et c’est lui qui valide la réponse.
+
 ## Les cartes
 
 | Carte | Ce qui se passe | Points |
@@ -9,6 +14,11 @@ Un blind test entre amis, sur un seul téléphone. Chacun son tour, on tire une 
 | Pédale | Une pédale déforme l’extrait. Le joueur répond à voix haute, les autres valident. | 2 |
 | Chaos | Les pédales changent toutes les 3 secondes. | 3 |
 | Chance | Quatre propositions s’affichent, il faut choisir la bonne. | 1 |
+| Mashup | Deux chansons de deux styles différents, mélangées dans la même pédale. Il faut trouver les deux. | 2 par chanson |
+
+En mode automatique, les styles des mashups se règlent avant la partie : tirés au hasard parmi les thèmes Deezer, choisis à la main (par exemple Rap français × Disney), ou pas de mashup du tout. Quand les mashups sont activés, il y en a au moins un par partie.
+
+Une fois la réponse donnée, le bouton **Sans pédale** fait réécouter l’extrait d’origine (les deux, pour un mashup).
 
 ## La musique
 

@@ -20,3 +20,17 @@ export function normalize(buf){
   for(const d of chans) for(let i = 0; i < d.length; i++) d[i] *= g;
   return buf;
 }
+
+const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+
+/* Mashup : les deux extraits joués ensemble, l'un un peu à gauche, l'autre un peu à droite. Le plus court tourne en boucle. */
+export async function mixBuffers(a, b){
+  const sr = AC().sampleRate, len = Math.ceil(Math.min(30, Math.max(a.duration, b.duration)) * sr);
+  const oc = new OAC(2, len, sr);
+  [[a, -.4], [b, .4]].forEach(([buf, pan]) => {
+    const s = oc.createBufferSource(), p = oc.createStereoPanner();
+    s.buffer = buf; s.loop = true; p.pan.value = pan;
+    s.connect(p); p.connect(oc.destination); s.start(0);
+  });
+  return normalize(await oc.startRendering());
+}

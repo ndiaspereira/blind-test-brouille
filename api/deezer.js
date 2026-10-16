@@ -1,5 +1,5 @@
 // Relais vers l'API publique de Deezer : elle n'autorise pas les appels directs depuis un navigateur (pas d'en-têtes CORS).
-const ALLOWED = /^\/(chart\/0\/tracks|playlist\/\d+(\/tracks)?|search\/playlist|track\/\d+)$/;
+const ALLOWED = /^\/(chart\/0\/tracks|playlist\/\d+(\/tracks)?|search\/(playlist|track)|track\/\d+)$/;
 
 export default async function handler(req, res){
   const {path = '', q, limit, index} = req.query;

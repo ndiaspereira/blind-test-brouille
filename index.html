@@ -32,7 +32,7 @@
 
   <div class="block">
     <button class="play" id="play">Nouvelle partie</button>
-    <p class="small muted center">De 1 à 8 joueurs sur un seul téléphone. Sur iPhone, coupe le mode silencieux.</p>
+    <p class="small muted center">De 1 à 8 joueurs sur un seul téléphone, avec ou sans maître du jeu. Sur iPhone, coupe le mode silencieux.</p>
   </div>
 
   <div class="block">
@@ -41,6 +41,7 @@
       <div class="kind"><i style="--c:#1FC8B0;--t:#04231E">P</i><div><b>Pédale</b><span>Une pédale déforme l’extrait. Tu dis ta réponse à voix haute, les autres valident.</span></div><em>2 pts</em></div>
       <div class="kind"><i class="rainbow" style="--t:#1B1628">C</i><div><b>Chaos</b><span>Les pédales changent toutes les 3 secondes.</span></div><em>3 pts</em></div>
       <div class="kind"><i style="--c:#FFC93C;--t:#2A1F05">?</i><div><b>Chance</b><span>Quatre propositions s’affichent, à toi de choisir.</span></div><em>1 pt</em></div>
+      <div class="kind"><i class="split" style="--t:#1B1628">M</i><div><b>Mashup</b><span>Deux chansons mélangées dans une pédale. Trouve les deux.</span></div><em>2 pts × 2</em></div>
     </div>
   </div>
 
@@ -67,7 +68,16 @@
   <ol class="players" id="players"></ol>
   <button class="ghost" id="addPlayer">Ajouter un joueur</button>
 
-  <div class="block music">
+  <div class="block">
+    <span class="label" id="modelbl">Le mode</span>
+    <div class="speed two" role="radiogroup" aria-labelledby="modelbl">
+      <button role="radio" aria-checked="true" data-mode="auto"><span class="led"></span><b>Automatique</b><small>morceaux tirés au sort</small></button>
+      <button role="radio" aria-checked="false" data-mode="manual"><span class="led"></span><b>Manuel</b><small>un maître du jeu choisit</small></button>
+    </div>
+    <p class="small muted" id="manualnote" hidden>À chaque tour, le maître du jeu cherche un morceau sur Deezer et choisit sa pédale, sans que le joueur regarde. Il ne joue pas : ne l’ajoute pas à la liste des joueurs. Il faut internet.</p>
+  </div>
+
+  <div class="block music auto">
     <span class="label" id="srclbl">La musique</span>
     <div class="themes" id="themes" role="radiogroup" aria-labelledby="srclbl"></div>
     <form class="search" id="search" role="search">
@@ -77,6 +87,33 @@
     <div class="results" id="results" hidden></div>
     <p class="srcinfo" id="srcinfo" aria-live="polite"></p>
     <input id="files" class="vh" type="file" accept="audio/*" multiple tabindex="-1" aria-hidden="true">
+  </div>
+
+  <div class="block auto">
+    <span class="label" id="lvllbl">Niveau des chansons</span>
+    <div class="speed four" role="radiogroup" aria-labelledby="lvllbl">
+      <button role="radio" aria-checked="true" data-level="1"><span class="lv" data-n="1"><i></i><i></i><i></i><i></i></span><b>Facile</b><small>les gros tubes</small></button>
+      <button role="radio" aria-checked="false" data-level="2"><span class="lv" data-n="2"><i></i><i></i><i></i><i></i></span><b>Moyen</b><small>des chansons connues</small></button>
+      <button role="radio" aria-checked="false" data-level="3"><span class="lv" data-n="3"><i></i><i></i><i></i><i></i></span><b>Difficile</b><small>moins connues</small></button>
+      <button role="radio" aria-checked="false" data-level="4"><span class="lv" data-n="4"><i></i><i></i><i></i><i></i></span><b>Expert</b><small>les plus pointues</small></button>
+    </div>
+    <p class="srcinfo" id="lvlinfo" aria-live="polite"></p>
+  </div>
+
+  <div class="block auto">
+    <span class="label" id="mixlbl">Cartes mashup</span>
+    <p class="small muted">Deux chansons mélangées dans la même pédale. Il faut trouver les deux.</p>
+    <div class="speed" role="radiogroup" aria-labelledby="mixlbl">
+      <button role="radio" aria-checked="false" data-mix="off"><span class="led"></span><b>Sans</b><small>pas de mashup</small></button>
+      <button role="radio" aria-checked="true" data-mix="random"><span class="led"></span><b>Au hasard</b><small>2 styles tirés au sort</small></button>
+      <button role="radio" aria-checked="false" data-mix="pick"><span class="led"></span><b>Je choisis</b><small>les 2 styles</small></button>
+    </div>
+    <div class="mixpick" id="mixpick" hidden>
+      <select id="mixA" aria-label="Premier style du mashup"></select>
+      <span class="x" aria-hidden="true">×</span>
+      <select id="mixB" aria-label="Deuxième style du mashup"></select>
+    </div>
+    <p class="srcinfo" id="mixinfo" aria-live="polite"></p>
   </div>
 
   <div class="block">
@@ -89,6 +126,32 @@
   </div>
   <button class="play" id="startParty">C’est parti</button>
   <button class="ghost" id="setupBack">Retour</button>
+</section>
+
+<section id="master" class="screen" hidden>
+  <div class="turnhead">
+    <span class="label" id="mturn">Tour 1 sur 3 · Maître du jeu</span>
+    <h2 class="who" id="mwho">Un morceau pour Io</h2>
+    <p class="hideme" id="mhide">Io, ne regarde pas l’écran !</p>
+  </div>
+  <div class="block">
+    <span class="label" id="mqlbl">Le morceau à deviner</span>
+    <div class="picked" id="picked"></div>
+    <form class="search" id="msearch" role="search">
+      <input id="mq" type="search" enterkeyhint="search" autocomplete="off" placeholder="Titre ou artiste" aria-labelledby="mqlbl">
+      <button type="submit" aria-label="Chercher"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+    </form>
+    <div class="results" id="mresults" hidden></div>
+    <p class="srcinfo" id="minfo" aria-live="polite"></p>
+    <button class="ghost" id="addSecond" hidden>Ajouter une 2e chanson (mashup)</button>
+  </div>
+  <div class="block">
+    <span class="label" id="mfxlbl">La pédale</span>
+    <div class="fxchips" id="mfx" role="radiogroup" aria-labelledby="mfxlbl"></div>
+    <p class="small muted" id="mfxdesc"></p>
+  </div>
+  <button class="play" id="mready" disabled>C’est prêt</button>
+  <button class="ghost" id="mquit">Arrêter la partie</button>
 </section>
 
 <section id="draw" class="screen" hidden>
@@ -129,6 +192,7 @@
     <div class="fxbar"><i id="fxbar"></i></div>
   </div>
 
+  <div class="mixrow" id="mixrow" hidden><span class="label">Mashup</span><b id="mixnames"></b></div>
   <div class="chainrow" id="chainrow"><span class="label">Entendues</span><div class="chain" id="chain"></div></div>
   <div class="answers" id="answers"></div>
   <button class="play" id="know">Je sais !</button>
@@ -151,6 +215,7 @@
     <p class="stats" id="stats"></p>
     <div class="chips" id="heard"></div>
     <div class="judge" id="judge" hidden><button class="play good" id="judgeYes">Trouvé !</button><button class="ghost" id="judgeNo">Raté</button></div>
+    <div class="judge three" id="judgeMix" hidden><button class="play good" data-found="2">Les 2<small>+4 pts</small></button><button class="play half" data-found="1">Une<small>+2 pts</small></button><button class="ghost" data-found="0">Aucune<small>0 pt</small></button></div>
     <button class="play" id="nextBtn">Joueur suivant</button>
   </div>
 </div>

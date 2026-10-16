@@ -26,6 +26,7 @@ const song = t => ({
   cover: (t.album && (t.album.cover_medium || t.album.cover)) || '',
   preview: t.preview,
   link: t.link || `https://www.deezer.com/track/${t.id}`,
+  rank: t.rank || 0,          // popularité Deezer : sert aux niveaux de difficulté
 });
 
 /* Un titre par chanson (pas de doublon « version live » ou « remix »), et seulement ceux qui ont un extrait. */
@@ -48,6 +49,12 @@ export async function searchPlaylists(q){
     id: p.id, title: p.title, n: p.nb_tracks, cover: p.picture_medium || p.picture || '',
     by: (p.user && p.user.name) || '',
   }));
+}
+
+/* Recherche de morceaux pour le maître du jeu (mode manuel) */
+export async function searchTracks(q){
+  const j = await call('/search/track', {q, limit: 25}), seen = new Set();
+  return (j.data || []).filter(t => t && t.preview && t.readable !== false && !seen.has(t.id) && seen.add(t.id)).map(song);
 }
 
 /* Un thème = la première grosse playlist trouvée pour ce mot-clé (souvent une playlist officielle Deezer). */

@@ -1,9 +1,9 @@
 // Brouillé : le blind test qui déraille. Écrans, cartes, tours de jeu.
-import {AC, normalize} from './audio.js';
+import {AC, normalize, mixBuffers} from './audio.js';
 import {TUNES, renderTune} from './music.js';
 import {FX, hasSide} from './fx.js';
 import {Player} from './player.js';
-import {THEMES, themeTracks, tracks, playlistInfo, searchPlaylists, playlistFromLink, looksLikeLink, loadPreview} from './deezer.js';
+import {THEMES, themeTracks, tracks, playlistInfo, searchPlaylists, searchTracks, playlistFromLink, looksLikeLink, loadPreview} from './deezer.js';
 
 const $ = id => document.getElementById(id);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -78,14 +78,22 @@ let src = null;               // source sélectionnée
 let pool = null;              // morceaux prêts pour la partie
 let srcToken = 0, fileToken = 0, searchToken = 0;
 let userSongs = [];
-const lists = new Map();      // listes Deezer déjà chargées : {at, songs}
+const lists = new Map();      // listes Deezer déjà chargées (ou en cours) : {at, p}
+function loadList(s){
+  const hit = lists.get(s.id);
+  if(hit && Date.now() - hit.at < 10 * 60e3) return hit.p;
+  const p = s.playlist ? tracks(`/playlist/${s.playlist}/tracks`) : themeTracks(s);
+  lists.set(s.id, {at: Date.now(), p});
+  p.catch(() => { if(lists.get(s.id)?.p === p) lists.delete(s.id); });
+  return p;
+}
 
 const allSources = () => custom ? [custom, ...SOURCES] : SOURCES;
 function renderSources(){
   $('themes').innerHTML = allSources().map(s => `<button type="button" class="theme" role="radio" data-src="${esc(s.id)}" aria-checked="${src === s}">${esc(s.name)}${s.note ? `<small>${esc(s.note)}</small>` : ''}</button>`).join('');
 }
 function info(text, cls = ''){ $('srcinfo').className = 'srcinfo ' + cls; $('srcinfo').textContent = text; }
-function ready(songs){ pool = songs; $('startParty').disabled = !songs; }
+function ready(songs){ pool = songs; updateStart(); levelInfo(); if(mix === 'pick' && [mixA, mixB].includes('main')) mixInfo(); }
 const extraits = n => `${n} extrait${n > 1 ? 's' : ''}`;
 
 async function selectSource(s, auto = false){
@@ -97,14 +105,10 @@ async function selectSource(s, auto = false){
   if(s.kind === 'files'){ ready(userSongs); info(`${extraits(userSongs.length)} depuis ton téléphone. Le nom du fichier est la réponse.`, 'ok'); return; }
   ready(null); info('Chargement des morceaux…', 'wait');
   try{
-    let hit = lists.get(s.id);
-    if(!hit || Date.now() - hit.at > 10 * 60e3){
-      hit = {at: Date.now(), songs: await (s.playlist ? tracks(`/playlist/${s.playlist}/tracks`) : themeTracks(s))};
-      lists.set(s.id, hit);
-    }
+    const songs = await loadList(s);
     if(token !== srcToken) return;
-    if(hit.songs.length < 4){ lists.delete(s.id); info('Pas assez d’extraits dans cette playlist. Choisis-en une autre.', 'err'); return; }
-    ready(hit.songs); info(`${extraits(hit.songs.length)} Deezer prêts · ${s.name}`, 'ok');
+    if(songs.length < 4){ lists.delete(s.id); info('Pas assez d’extraits dans cette playlist. Choisis-en une autre.', 'err'); return; }
+    ready(songs); info(`${extraits(songs.length)} Deezer prêts · ${s.name}`, 'ok');
   }catch(e){
     if(token !== srcToken) return;
     if(auto && prev === null){ selectSource(SOURCES.find(x => x.kind === 'tunes'), true); info('Deezer ne répond pas, on jouera avec les airs connus (sans internet).', 'err'); return; }
@@ -172,24 +176,93 @@ function initSource(){
   selectSource(s && s.kind !== 'files' ? s : SOURCES[0], true);
 }
 
+/* ================= Mashups : deux chansons mélangées, de deux styles ================= */
+const MIX_CHOICES = [{id: 'main', name: 'Musique de la partie'}, ...THEMES.map(t => ({id: t.id, name: t.name})), {id: 'tunes', name: 'Airs connus'}];
+const validMix = id => MIX_CHOICES.some(c => c.id === id);
+let mix = store.get('mix', 'random'), mixA = store.get('mixA', 'rapfr'), mixB = store.get('mixB', 'disney'), mixToken = 0;
+if(!['off', 'random', 'pick'].includes(mix)) mix = 'random';
+if(!validMix(mixA)) mixA = 'rapfr';
+if(!validMix(mixB)) mixB = 'disney';
+$('mixA').innerHTML = $('mixB').innerHTML = MIX_CHOICES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+
+/* Un style = un nom + de quoi obtenir ses morceaux */
+function styleOf(id){
+  if(id === 'main') return {id, name: src ? src.name : 'Musique de la partie', songs: () => (party ? party.pool : pool) || []};
+  if(id === 'tunes') return {id, name: 'Airs connus', songs: () => TUNES};
+  const s = SOURCES.find(x => x.id === id);
+  return {id, name: s.name, songs: () => loadList(s).then(l => byLevel(l, party ? party.level : level))};
+}
+async function mixInfo(){
+  const el = $('mixinfo'), token = ++mixToken;
+  el.className = 'srcinfo';
+  if(mix === 'off'){ el.textContent = ''; return; }
+  if(mix === 'random'){ el.textContent = 'Chaque mashup mélange deux thèmes Deezer tirés au sort.'; return; }
+  const a = styleOf(mixA), b = styleOf(mixB);
+  el.textContent = a.id === b.id ? `Deux chansons « ${a.name} » mélangées.` : `${a.name} × ${b.name}`;
+  try{ await Promise.all([a.songs(), b.songs()]); if(token === mixToken) el.className = 'srcinfo ok'; }
+  catch(e){ if(token === mixToken){ el.className = 'srcinfo err'; el.textContent = 'Deezer ne répond pas pour ces styles : les mashups prendront la musique de la partie.'; } }
+}
+function renderMix(){
+  document.querySelectorAll('[data-mix]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.mix === mix)));
+  $('mixpick').hidden = mix !== 'pick';
+  $('mixA').value = mixA; $('mixB').value = mixB;
+  mixInfo();
+}
+document.querySelectorAll('[data-mix]').forEach(b => b.addEventListener('click', () => { mix = b.dataset.mix; store.set('mix', mix); renderMix(); }));
+$('mixA').addEventListener('change', e => { mixA = e.target.value; store.set('mixA', mixA); mixInfo(); });
+$('mixB').addEventListener('change', e => { mixB = e.target.value; store.set('mixB', mixB); mixInfo(); });
+
+/* ================= Mode : automatique (morceaux tirés au sort) ou manuel (un maître du jeu choisit) ================= */
+let gameMode = store.get('mode', 'auto');
+if(!['auto', 'manual'].includes(gameMode)) gameMode = 'auto';
+function updateStart(){ $('startParty').disabled = gameMode === 'auto' && !pool; }
+function renderMode(){
+  document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === gameMode)));
+  document.querySelectorAll('#setup .auto').forEach(el => { el.hidden = gameMode !== 'auto'; });
+  $('manualnote').hidden = gameMode !== 'manual';
+  updateStart();
+}
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { gameMode = b.dataset.mode; store.set('mode', gameMode); renderMode(); }));
+
+/* Niveau : les morceaux sont classés par popularité Deezer, chaque niveau garde sa tranche (du plus écouté au moins écouté) */
+const LEVELS = ['', 'les plus gros tubes', 'des chansons connues', 'des chansons moins connues', 'les chansons les plus pointues'];
+let level = store.get('level', 1);
+if(![1, 2, 3, 4].includes(level)) level = 1;
+function byLevel(songs, lv){
+  if(!songs || !songs.some(s => s.rank)) return songs || [];
+  const sorted = songs.slice().sort((a, b) => b.rank - a.rank), n = sorted.length;
+  const size = Math.min(n, Math.max(8, Math.ceil(n / 4))), start = Math.round((n - size) * (lv - 1) / 3);
+  return sorted.slice(start, start + size);
+}
+function levelInfo(){
+  const el = $('lvlinfo');
+  if(!pool){ el.className = 'srcinfo'; el.textContent = ''; return; }
+  if(!pool.some(s => s.rank)){ el.className = 'srcinfo'; el.textContent = 'Le niveau ne change rien pour les airs connus et tes MP3.'; return; }
+  el.className = 'srcinfo ok';
+  el.textContent = `${extraits(byLevel(pool, level).length)} : ${LEVELS[level]} de « ${src.name} ».`;
+}
+function renderLevel(){ document.querySelectorAll('[data-level]').forEach(b => b.setAttribute('aria-checked', String(+b.dataset.level === level))); levelInfo(); }
+document.querySelectorAll('[data-level]').forEach(b => b.addEventListener('click', () => { level = +b.dataset.level; store.set('level', level); renderLevel(); }));
+
 /* ================= Partie ================= */
 const TURN_TIME = 30, CHAOS_EVERY = 3, CIRC = 351.86;
 const KINDS = {
   fx: {label: 'Carte pédale', pts: 2, status: 'Une seule pédale pour ce tour'},
   chaos: {label: 'Carte chaos', pts: 3, name: 'Chaos', desc: 'Les pédales changent toutes les 3 secondes.', c: '#F7F0E3', t: '#1B1628'},
   chance: {label: 'Carte chance', pts: 1, name: 'Chance', desc: 'Quatre propositions et une pédale surprise.', c: '#FFC93C', t: '#2A1F05', status: 'Choisis parmi les 4 propositions'},
+  mashup: {label: 'Carte mashup', pts: 2, name: 'Mashup', c: '#FF5FA2', t: '#1B1628', status: 'Trouve les 2 chansons'}, // 2 points par chanson
 };
 let party = null, turn = null, busy = false;
 
-function show(id){ ['home', 'setup', 'draw', 'game', 'end'].forEach(s => { $(s).hidden = s !== id; }); $('sheet').hidden = true; window.scrollTo(0, 0); }
+function show(id){ cleanStop(); ['home', 'setup', 'master', 'draw', 'game', 'end'].forEach(s => { $(s).hidden = s !== id; }); $('sheet').hidden = true; window.scrollTo(0, 0); }
 const bump = el => { if(reduced) return; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); };
 const chips = list => list.map(f => `<span class="chip"><i style="--c:${f.c}"></i>${esc(f.name)}</span>`).join('');
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
 
-$('play').addEventListener('click', () => { AC(); labStop(); show('setup'); initSource(); });
+$('play').addEventListener('click', () => { AC(); labStop(); show('setup'); initSource(); renderMode(); renderLevel(); renderMix(); });
 $('setupBack').addEventListener('click', () => show('home'));
 $('startParty').addEventListener('click', () => {
-  if(!pool) return;
+  if(gameMode === 'auto' && !pool) return;
   AC();
   store.set('names', names); store.set('rounds', rounds);
   startParty(names.map((n, i) => n.trim() || `Joueur ${i + 1}`));
@@ -209,19 +282,70 @@ const release = s => { if(s && s.preview) s.buffer = null; };
 const prefetch = () => { const up = party && party.queue[0]; if(up) getBuffer(up).catch(() => {}); };
 
 function startParty(list){
-  if(!pool || !pool.length) return;
-  const tunes = pool === TUNES;
+  const manual = gameMode === 'manual';
+  if(!manual && (!pool || !pool.length)) return;
+  const tunes = !manual && pool === TUNES, songs = manual ? [] : byLevel(pool, level);
   party = {players: list.map((name, i) => ({name, score: 0, found: 0, col: PCOL[i % PCOL.length]})), rounds, total: list.length * rounds, n: 0,
-    pool: pool.slice(), queue: tunes ? planned.slice() : shuffle(pool), lastSong: null, lastFx: null, bumped: null};
+    manual, level, plan: null, pool: songs, queue: tunes ? planned.slice() : shuffle(songs), lastSong: null, lastFx: null, bumped: null,
+    mix: manual || mix === 'off' ? null : {mode: mix, a: mixA, b: mixB}, hadMix: false, used: new Set(), next: null, nextMix: null};
   if(tunes) planned = shuffle(TUNES);
   prepareDraw();
 }
+/* Le morceau suivant de la pile, en sautant ceux déjà entendus dans un mashup. Pile vide : on rebat tout. */
 function nextSong(){
-  if(!party.queue.length){ party.queue = shuffle(party.pool); if(party.queue.length > 1 && party.queue[0] === party.lastSong) party.queue.push(party.queue.shift()); }
-  return (party.lastSong = party.queue.shift());
+  while(true){
+    if(!party.queue.length){
+      party.used.clear();
+      party.queue = shuffle(party.pool);
+      if(!party.queue.length) return null;
+      if(party.queue.length > 1 && party.queue[0] === party.lastSong) party.queue.push(party.queue.shift());
+    }
+    const s = party.queue.shift();
+    if(!party.used.has(keyOf(s))) return (party.lastSong = s);
+  }
 }
 function dropSong(s){ party.pool = party.pool.filter(x => x !== s); party.queue = party.queue.filter(x => x !== s); }
 const current = () => party.players[party.n % party.players.length];
+const keyOf = s => s.title.toLowerCase();
+
+/* La carte est tirée au sort dès l'écran du tirage, pour préparer le bon extrait pendant que les joueurs se passent le téléphone. */
+function rollKind(){
+  const r = Math.random();
+  if(!party.mix) return r < .2 ? 'chance' : r < .35 ? 'chaos' : 'fx';
+  if(!party.hadMix && party.n === party.total - 1) return 'mashup'; // au moins un mashup par partie
+  return r < .17 ? 'chance' : r < .3 ? 'chaos' : r < .5 ? 'mashup' : 'fx';
+}
+function mixStyles(){
+  if(party.mix.mode === 'pick') return [styleOf(party.mix.a), styleOf(party.mix.b)];
+  const [a, b] = shuffle(THEMES);
+  return [styleOf(a.id), styleOf(b.id)];
+}
+function pickFrom(list, not){
+  const ok = list.filter(s => !not.has(keyOf(s))), fresh = ok.filter(s => !party.used.has(keyOf(s)));
+  const from = fresh.length ? fresh : ok;
+  return from[Math.random() * from.length | 0];
+}
+/* Un mashup : une chanson de chaque style, les deux extraits mélangés sur un seul disque */
+async function planMashup(){
+  let styles = mixStyles(), from;
+  try{
+    from = await Promise.all(styles.map(st => st.songs()));
+    if(from.some(l => !l.length)) throw new Error('style vide');
+  }catch(e){ styles = null; from = [party.pool, party.pool]; } // Deezer muet : on mélange deux morceaux de la partie
+  const bad = new Set();
+  for(let tries = 0; tries < 3; tries++){
+    const a = pickFrom(from[0], bad); if(!a) break;
+    const b = pickFrom(from[1], new Set([...bad, keyOf(a)])); if(!b) break;
+    const got = await Promise.allSettled([getBuffer(a), getBuffer(b)]);
+    if(got.every(g => g.status === 'fulfilled')){
+      const raw = got.map(g => g.value);
+      return {songs: [a, b], raw, styles: styles && styles.map(st => st.name), buf: await mixBuffers(raw[0], raw[1])};
+    }
+    got.forEach((g, i) => { const s = [a, b][i]; if(g.status === 'rejected') bad.add(keyOf(s)); else release(s); });
+  }
+  throw new Error('mashup impossible');
+}
+const mixLabel = t => t.styles && t.styles[0] !== t.styles[1] ? `${t.styles[0]} × ${t.styles[1]}` : '';
 
 function renderScores(){
   const cur = current();
@@ -231,6 +355,7 @@ function renderScores(){
 function prepareDraw(){
   if(party.n >= party.total){ endParty(); return; }
   turn = null;
+  if(party.manual && !party.plan){ showMaster(); return; }
   const p = current();
   show('draw');
   $('turnlbl').textContent = `Tour ${Math.floor(party.n / party.players.length) + 1} sur ${party.rounds}`;
@@ -239,7 +364,10 @@ function prepareDraw(){
   $('deck').classList.remove('drawn'); $('deck').disabled = false;
   $('drawhint').hidden = false; $('drawhint').textContent = 'Touche le paquet pour tirer ta carte.';
   $('listen').hidden = true;
-  prefetch();
+  if(party.manual) return;
+  party.next = rollKind();
+  if(party.next === 'mashup'){ party.nextMix = planMashup(); party.nextMix.catch(() => {}); }
+  else prefetch();
 }
 
 $('deck').addEventListener('click', async () => {
@@ -248,35 +376,63 @@ $('deck').addEventListener('click', async () => {
   const slow = setTimeout(() => { $('drawhint').textContent = 'Chargement de l’extrait…'; }, 700);
   try{
     AC();
-    let song = null, buf = null;
-    for(let tries = 0; tries < 4 && !buf && party.pool.length; tries++){
-      song = nextSong();
-      try{ buf = await getBuffer(song); }
-      catch(e){ if(!song.melody) dropSong(song); else throw e; }
-    }
-    if(!buf) throw new Error('aucun extrait');
-    const fxs = FX.filter(f => !f.stereo || hasSide(buf));
-    const r = Math.random(), kind = r < .2 ? 'chance' : r < .35 ? 'chaos' : 'fx';
+    const d = party.manual ? await drawManual() : await drawAuto(), {kind, songs, buf} = d;
+    const fxs = FX.filter(f => !f.stereo || (songs.length === 1 && hasSide(buf)));
     let fx = null;
-    if(kind !== 'chaos'){ do { fx = fxs[Math.random() * fxs.length | 0]; } while(fxs.length > 1 && fx === party.lastFx); party.lastFx = fx; }
-    turn = {kind, song, buf, fx, pool: fxs, player: current()};
+    if(kind !== 'chaos'){
+      if(d.chosen && fxs.includes(d.chosen)) fx = d.chosen;
+      else do { fx = fxs[Math.random() * fxs.length | 0]; } while(fxs.length > 1 && fx === party.lastFx);
+      party.lastFx = fx;
+    }
+    songs.forEach(s => party.used.add(keyOf(s)));
+    turn = {kind, song: songs[0], songs, raw: d.raw, styles: d.styles, buf, fx, pool: fxs, player: current()};
     renderCard(turn);
     $('deck').classList.add('drawn'); $('drawhint').hidden = true;
     const t = turn;
     setTimeout(() => { if(turn === t && !t.started){ $('listen').hidden = false; $('listen').focus({preventScroll: true}); } }, reduced ? 0 : 650);
   } catch(e){
+    if(party.manual){ party.plan = null; prepareDraw(); minfo('Un extrait ne se charge pas. Choisis un autre morceau.', 'err'); return; }
     $('drawhint').textContent = party.pool.length ? 'L’extrait n’a pas pu être chargé. Vérifie ta connexion et touche encore le paquet.' : 'Plus aucun extrait ne répond. Arrête la partie et choisis « Airs connus ».';
     $('deck').disabled = false;
   } finally { clearTimeout(slow); busy = false; }
 });
+/* Mode automatique : la carte tirée au sort, et un morceau de la pile (deux pour un mashup) */
+async function drawAuto(){
+  let kind = party.next || rollKind(), plan = null;
+  if(kind === 'mashup'){
+    try{ plan = await (party.nextMix || planMashup()); }catch(e){ kind = 'fx'; } // pas de mashup possible : carte pédale
+  }
+  party.next = null; party.nextMix = null;
+  if(plan){ party.hadMix = true; return {kind, ...plan}; }
+  let song = null, buf = null;
+  for(let tries = 0; tries < 4 && !buf && party.pool.length; tries++){
+    song = nextSong(); if(!song) break;
+    try{ buf = await getBuffer(song); }
+    catch(e){ if(!song.melody) dropSong(song); else throw e; }
+  }
+  if(!buf) throw new Error('aucun extrait');
+  return {kind, songs: [song], raw: [buf], buf};
+}
+/* Mode manuel : le morceau (ou les deux) et la pédale choisis par le maître du jeu */
+async function drawManual(){
+  const pl = party.plan, two = pl.songs.length > 1;
+  const raw = await Promise.all(pl.songs.map(getBuffer));
+  const buf = two ? await mixBuffers(raw[0], raw[1]) : raw[0];
+  party.plan = null;
+  return {kind: two ? 'mashup' : pl.fx === 'chaos' ? 'chaos' : 'fx', songs: pl.songs, raw, buf, chosen: FX.find(f => f.id === pl.fx)};
+}
+
 function renderCard(t){
   const k = KINDS[t.kind], face = t.kind === 'fx' ? t.fx : k, front = $('front');
-  front.className = 'face front ' + t.kind + (t.kind === 'chaos' ? ' rainbow' : '');
+  front.className = 'face front ' + t.kind + (t.kind === 'chaos' ? ' rainbow' : t.kind === 'mashup' ? ' split' : '');
   front.style.setProperty('--c', face.c); front.style.setProperty('--t', face.t);
   const art = t.kind === 'chance' ? '<span class="qmark">?</span>'
     : t.kind === 'chaos' ? '<span class="art"><span class="led on"></span><span class="led on"></span><span class="led on"></span><span class="led on"></span></span>'
+    : t.kind === 'mashup' ? '<span class="art discs"><i></i><i></i></span>'
     : '<span class="art"><span class="knobs"><i class="knob" style="--r:-45deg"></i><i class="knob" style="--r:20deg"></i><i class="knob" style="--r:65deg"></i></span><span class="led on"></span></span>';
-  front.innerHTML = `<span class="top"><span>${k.label}</span><span class="ptag">${plural(k.pts, 'pt')}</span></span>${art}<span class="name">${esc(face.name)}</span><span class="desc">${esc(face.desc)}</span>`;
+  const desc = t.kind === 'mashup' ? (mixLabel(t) ? `${mixLabel(t)}. ` : 'Deux chansons mélangées. ') + 'Trouve les deux !' : face.desc;
+  const pts = t.kind === 'mashup' ? `${k.pts} pts × 2` : plural(k.pts, 'pt');
+  front.innerHTML = `<span class="top"><span>${k.label}</span><span class="ptag">${pts}</span></span>${art}<span class="name">${esc(face.name)}</span><span class="desc">${esc(desc)}</span>`;
 }
 
 $('listen').addEventListener('click', startTurn);
@@ -286,10 +442,11 @@ function startTurn(){
   $('hudName').textContent = t.player.name; $('score').textContent = t.player.score;
   $('clock').textContent = `${TURN_TIME} s`; $('ring').style.strokeDashoffset = '0';
   $('chain').innerHTML = ''; $('chainrow').hidden = t.kind !== 'chaos';
+  $('mixrow').hidden = t.kind !== 'mashup'; $('mixnames').textContent = mixLabel(t) || '2 chansons mélangées';
   $('answers').innerHTML = ''; $('answers').hidden = t.kind !== 'chance'; $('know').hidden = t.kind === 'chance';
   if(t.kind === 'chance') renderChoices(t.song);
   show('game');
-  const offset = !t.song.melody && !t.song.preview && t.buf.duration > 40 ? t.buf.duration * (.25 + Math.random() * .35) : 0;
+  const offset = t.kind !== 'mashup' && !t.song.melody && !t.song.preview && t.buf.duration > 40 ? t.buf.duration * (.25 + Math.random() * .35) : 0;
   const now = performance.now();
   Object.assign(t, {p: new Player(t.buf, offset), heard: [], bag: [], cur: null, start: now, last: now, nextSwap: now + CHAOS_EVERY * 1000, angle: 0, done: false});
   applyFx(t, t.kind === 'chaos' ? drawFx(t) : t.fx);
@@ -356,34 +513,64 @@ function tick(now){
 function stopTurn(r){ r.done = true; r.p.stop(); $('bigled').classList.remove('on'); }
 function openSheet(focusEl){ $('sheet').hidden = false; focusEl.focus({preventScroll: true}); }
 const lastTurn = () => party.n + 1 >= party.total;
-function showSong(s){
-  const cover = s.cover ? `<img class="cover" src="${esc(s.cover)}" alt="" width="72" height="72">` : '';
-  const link = s.link ? `<a class="dz" href="${esc(s.link)}" target="_blank" rel="noopener">Écouter sur Deezer</a>` : '';
-  $('reveal').innerHTML = `${cover}<span class="what"><span class="label">C’était</span><b>${esc(s.title)}</b>${s.artist ? `<span class="by">${esc(s.artist)}</span>` : ''}${link}</span>`;
+function showSongs(r){
+  const two = r.songs.length > 1;
+  $('reveal').innerHTML = r.songs.map((s, i) => {
+    const tag = two ? `Chanson ${i + 1}${mixLabel(r) ? ' · ' + r.styles[i] : ''}` : 'C’était';
+    const cover = s.cover ? `<img class="cover" src="${esc(s.cover)}" alt="" width="64" height="64">` : '';
+    const link = s.link ? `<a class="dz" href="${esc(s.link)}" target="_blank" rel="noopener">Sur Deezer</a>` : '';
+    return `<div class="song">${cover}<span class="what"><span class="label">${esc(tag)}</span><b>${esc(s.title)}</b>${s.artist ? `<span class="by">${esc(s.artist)}</span>` : ''}<span class="acts"><button type="button" class="clean" data-i="${i}" aria-pressed="false">Sans pédale</button>${link}</span></span></div>`;
+  }).join('');
 }
+
+/* Une fois la réponse donnée : réécouter chaque extrait d'origine, sans pédale */
+let clean = null;
+function cleanStop(){
+  if(clean){
+    const {s, g} = clean, c = AC();
+    g.gain.setTargetAtTime(0, c.currentTime, .03);
+    setTimeout(() => { try{ s.stop(); }catch(e){} }, 200);
+    clean = null;
+  }
+  document.querySelectorAll('.clean').forEach(b => { b.setAttribute('aria-pressed', 'false'); b.textContent = 'Sans pédale'; });
+}
+function cleanToggle(i){
+  const was = clean ? clean.i : -1;
+  cleanStop();
+  if(was === i || !turn || !turn.raw[i]) return;
+  const c = AC(), s = c.createBufferSource(), g = c.createGain();
+  s.buffer = turn.raw[i]; s.loop = true; g.gain.value = .85;
+  s.connect(g); g.connect(c.destination); s.start();
+  clean = {s, g, i};
+  const b = document.querySelector(`.clean[data-i="${i}"]`);
+  b.setAttribute('aria-pressed', 'true'); b.textContent = 'Arrêter';
+}
+$('reveal').addEventListener('click', e => { const b = e.target.closest('.clean'); if(b) cleanToggle(+b.dataset.i); });
 
 /* carte pédale ou chaos : le joueur répond à voix haute, les autres valident */
 $('know').addEventListener('click', () => reveal(false));
 function reveal(timeout){
   const r = turn; if(!r || r.done) return; stopTurn(r);
-  const k = KINDS[r.kind];
+  const k = KINDS[r.kind], two = r.kind === 'mashup';
   $('verdict').className = 'verdict';
   $('verdict').textContent = timeout ? 'Temps écoulé !' : `Alors, ${r.player.name} ?`;
-  showSong(r.song);
-  $('stats').textContent = party.players.length > 1 ? `Les autres joueurs valident · ${plural(k.pts, 'point')} en jeu` : `Sois honnête · ${plural(k.pts, 'point')} en jeu`;
+  showSongs(r);
+  const who = party.manual ? 'Le maître du jeu valide' : party.players.length > 1 ? 'Les autres joueurs valident' : 'Sois honnête';
+  $('stats').textContent = two ? `${who} · ${k.pts} points par chanson` : `${who} · ${plural(k.pts, 'point')} en jeu`;
   $('heard').innerHTML = chips(r.heard);
   $('judgeYes').textContent = `Trouvé ! +${k.pts}`;
-  $('judge').hidden = false; $('nextBtn').hidden = true;
-  openSheet($('judgeYes'));
+  $('judge').hidden = two; $('judgeMix').hidden = !two; $('nextBtn').hidden = true;
+  openSheet(two ? $('judgeMix').querySelector('button') : $('judgeYes'));
 }
-$('judgeYes').addEventListener('click', () => judge(true));
-$('judgeNo').addEventListener('click', () => judge(false));
-function judge(ok){
+$('judgeYes').addEventListener('click', () => judge(1));
+$('judgeNo').addEventListener('click', () => judge(0));
+$('judgeMix').addEventListener('click', e => { const b = e.target.closest('[data-found]'); if(b) judge(+b.dataset.found); });
+function judge(found){
   const r = turn; if(!r || r.judged) return; r.judged = true;
-  if(ok) award(r);
+  if(found) award(r, found);
   finishTurn();
 }
-function award(r){ r.player.score += KINDS[r.kind].pts; r.player.found++; party.bumped = party.players.indexOf(r.player); }
+function award(r, found = 1){ r.player.score += KINDS[r.kind].pts * found; r.player.found += found; party.bumped = party.players.indexOf(r.player); }
 
 /* carte chance : 4 propositions, validation automatique */
 function answerChance(picked, btn){
@@ -394,21 +581,23 @@ function answerChance(picked, btn){
   if(btn && !ok) btn.classList.add('ko');
   $('verdict').className = 'verdict ' + (ok ? 'ok' : 'ko');
   $('verdict').textContent = ok ? 'Bien joué !' : picked === null ? 'Temps écoulé !' : 'Raté !';
-  showSong(r.song);
+  showSongs(r);
   $('stats').textContent = ok ? `+1 point pour ${r.player.name}` : 'Pas de point cette fois';
   $('heard').innerHTML = chips(r.heard);
-  $('judge').hidden = true; $('nextBtn').hidden = false;
+  $('judge').hidden = true; $('judgeMix').hidden = true; $('nextBtn').hidden = false;
   $('nextBtn').textContent = lastTurn() ? 'Voir le classement' : 'Joueur suivant';
   setTimeout(() => { if(turn === r) openSheet($('nextBtn')); }, ok ? 650 : 900);
 }
 $('nextBtn').addEventListener('click', finishTurn);
-function finishTurn(){ if(!party || !turn) return; release(turn.song); turn = null; party.n++; prepareDraw(); }
+function finishTurn(){ if(!party || !turn) return; turn.songs.forEach(release); turn = null; party.n++; prepareDraw(); }
 
 function endParty(){
   if(turn && turn.p && !turn.done) stopTurn(turn);
-  if(turn) release(turn.song);
+  if(turn) turn.songs.forEach(release);
   turn = null;
   party.queue.forEach(release);
+  if(party.nextMix) party.nextMix.then(m => m.songs.forEach(release), () => {});
+  party.next = party.nextMix = party.plan = null;
   show('end'); prepare([planned[0]]);
   const ranked = party.players.slice().sort((a, b) => b.score - a.score || b.found - a.found);
   const top = ranked[0], tie = ranked.length > 1 && ranked[1].score === top.score && ranked[1].found === top.found;
@@ -419,6 +608,83 @@ function endParty(){
     return `<li class="${rank === 1 ? 'first' : ''}"><span class="r" style="--c:${p.col[0]};--t:${p.col[1]}">${rank}</span><span class="n">${esc(p.name)}<small>${p.found} morceau${p.found > 1 ? 'x' : ''} trouvé${p.found > 1 ? 's' : ''}</small></span><span class="p">${p.score}</span></li>`;
   }).join('');
 }
+
+/* ================= Mode manuel : l'écran du maître du jeu ================= */
+const master = {picks: [], slot: 0, fx: 'random', found: [], token: 0};
+function minfo(text, cls = ''){ $('minfo').className = 'srcinfo ' + cls; $('minfo').textContent = text; }
+function showMaster(){
+  const p = current();
+  show('master');
+  $('mturn').textContent = `Tour ${Math.floor(party.n / party.players.length) + 1} sur ${party.rounds} · Maître du jeu`;
+  $('mwho').textContent = `Un morceau pour ${p.name}`;
+  $('mhide').textContent = `${p.name}, ne regarde pas l’écran !`;
+  master.picks = []; master.slot = 0; master.fx = 'random'; master.token++;
+  $('mq').value = ''; $('mresults').hidden = true; minfo('');
+  renderPicks(); renderFxChips();
+}
+function renderPicks(){
+  const two = master.picks.length > 1;
+  $('picked').innerHTML = master.picks.map((s, i) => `<div class="pick">${s.cover ? `<img class="cover" src="${esc(s.cover)}" alt="" width="52" height="52">` : '<span class="noimg"></span>'}<span><span class="label">${two ? `Chanson ${i + 1}` : 'À deviner'}</span><b>${esc(s.title)}</b><span class="by">${esc(s.artist)}</span></span><button type="button" class="premove" data-i="${i}" aria-label="Retirer ${esc(s.title)}">✕</button></div>`).join('');
+  $('addSecond').hidden = master.picks.length !== 1 || master.slot === 1;
+  $('mq').placeholder = master.slot === 1 ? 'La 2e chanson : titre ou artiste' : master.picks.length ? 'Changer : titre ou artiste' : 'Titre ou artiste';
+  $('mready').disabled = !master.picks.length;
+  $('mready').textContent = master.picks.length ? `C’est prêt, à ${current().name} !` : 'C’est prêt';
+}
+function renderFxChips(){
+  const two = master.picks.length > 1, one = master.picks.length === 1 ? master.picks[0] : null;
+  const stereo = !!(one && one.buffer && hasSide(one.buffer));   // le karaoké a besoin d'un vrai son stéréo
+  const opts = [{id: 'random', name: 'Au hasard', c: 'var(--ink)', desc: 'Une pédale tirée au sort.'},
+    ...FX.map(f => ({id: f.id, name: f.name, c: f.c, desc: f.desc, off: f.stereo && !stereo})),
+    {id: 'chaos', name: 'Chaos', rainbow: true, desc: 'Les pédales changent toutes les 3 secondes. 3 points.', off: two}];
+  if(opts.find(o => o.id === master.fx)?.off) master.fx = 'random';
+  $('mfx').innerHTML = opts.map(o => `<button type="button" class="fxchip" role="radio" data-fx="${o.id}" aria-checked="${master.fx === o.id}"${o.off ? ' disabled' : ''}><i${o.rainbow ? ' class="rainbow"' : ''} style="--c:${o.c || 'transparent'}"></i>${esc(o.name)}</button>`).join('');
+  $('mfxdesc').textContent = opts.find(o => o.id === master.fx).desc + (two ? ' Avec deux chansons, c’est une carte mashup : 2 points par chanson.' : '');
+}
+$('msearch').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('mq').value.trim(); if(!q) return;
+  $('mq').blur();
+  const token = ++master.token;
+  minfo('Recherche…', 'wait');
+  try{
+    const found = (await searchTracks(q)).slice(0, 8);
+    if(token !== master.token) return;
+    if(!found.length){ $('mresults').hidden = true; minfo(`Aucun extrait trouvé pour « ${q} ».`, 'err'); return; }
+    master.found = found;
+    $('mresults').innerHTML = found.map((s, i) => `<button type="button" class="res" data-i="${i}">${s.cover ? `<img src="${esc(s.cover)}" alt="" width="48" height="48" loading="lazy">` : '<span class="noimg"></span>'}<span><b>${esc(s.title)}</b><small>${esc(s.artist)}</small></span></button>`).join('');
+    $('mresults').hidden = false;
+    minfo('Touche le morceau à faire deviner.');
+  }catch(err){ if(token === master.token) minfo('Deezer ne répond pas. Réessaie dans un instant.', 'err'); }
+});
+$('mresults').addEventListener('click', e => {
+  const b = e.target.closest('.res'); if(!b) return;
+  const s = master.found[+b.dataset.i];
+  if(master.picks.some(x => x.id === s.id)) return;
+  const at = Math.min(master.slot, master.picks.length);
+  release(master.picks[at]); master.picks[at] = s; master.slot = 0;
+  $('mresults').hidden = true; $('mq').value = ''; minfo('');
+  renderPicks(); renderFxChips();
+  AC();
+  getBuffer(s).then(() => renderFxChips(), () => {   // on charge tout de suite : le tour démarrera sans attendre
+    if(!master.picks.includes(s)) return;
+    master.picks = master.picks.filter(x => x !== s); renderPicks(); renderFxChips();
+    minfo(`L’extrait de « ${s.title} » ne se charge pas. Choisis-en un autre.`, 'err');
+  });
+});
+$('picked').addEventListener('click', e => {
+  const b = e.target.closest('.premove'); if(!b) return;
+  release(master.picks.splice(+b.dataset.i, 1)[0]); master.slot = 0;
+  renderPicks(); renderFxChips();
+});
+$('addSecond').addEventListener('click', () => { master.slot = 1; renderPicks(); $('mq').focus(); });
+$('mfx').addEventListener('click', e => { const b = e.target.closest('.fxchip'); if(!b || b.disabled) return; master.fx = b.dataset.fx; renderFxChips(); });
+$('mready').addEventListener('click', () => {
+  if(!master.picks.length) return;
+  AC();
+  party.plan = {songs: master.picks.slice(), fx: master.fx};
+  prepareDraw();
+});
+$('mquit').addEventListener('click', () => { if(party){ master.picks.forEach(release); endParty(); } });
 
 /* ================= Installation sur l'écran d'accueil ================= */
 if('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')){
