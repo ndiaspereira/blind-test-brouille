@@ -1,5 +1,5 @@
 // Garde une copie de l'appli pour jouer sans réseau (avec les airs connus). Le réseau passe toujours en premier.
-const CACHE = 'brouille-v3';
+const CACHE = 'brouille-v4';
 const SHELL = ['./', 'index.html', 'style.css', 'manifest.webmanifest', 'js/app.js', 'js/audio.js', 'js/deezer.js', 'js/fx.js', 'js/music.js', 'js/player.js', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {

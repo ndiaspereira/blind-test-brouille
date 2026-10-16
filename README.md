@@ -23,6 +23,7 @@ Une fois la réponse donnée, le bouton **Sans pédale** fait réécouter l’ex
 ## La musique
 
 - **Deezer** : thèmes tout prêts (Top du moment, Années 80, Rap français, Disney…), recherche de playlist, ou lien de playlist Deezer collé tel quel (le lien « Partager » de l’appli Deezer marche aussi). Ce sont les extraits officiels de 30 secondes, il faut une connexion internet.
+- **Mon Deezer** : on relie son profil Deezer avec son pseudo ou le lien de son profil, sans mot de passe. Ses playlists publiques (Coups de cœur en premier) s’affichent pour jouer avec, et en mode manuel le maître du jeu peut y piocher des morceaux. L’appli ne lit que ce qui est public : une playlist privée n’apparaît pas. Le profil est retenu sur le téléphone, le bouton **Changer** l’oublie.
 - **Airs connus** : neuf airs du domaine public joués par le synthé de l’appli. Marche sans internet.
 - **Mes MP3** : des fichiers du téléphone. Le nom du fichier devient la bonne réponse.
 
@@ -57,7 +58,7 @@ js/deezer.js          thèmes, recherche et chargement des extraits Deezer
 js/audio.js           contexte audio partagé, mise à niveau du volume
 api/deezer.js         relais vers l’API Deezer (elle refuse les appels directs d’un navigateur)
 api/preview.js        relais des extraits MP3 (hébergés sur dzcdn.net uniquement)
-api/resolve.js        lit les liens de partage raccourcis (link.deezer.com)
+api/resolve.js        lit les liens de partage raccourcis (link.deezer.com) : playlist ou profil
 sw.js                 garde une copie de l’appli pour jouer hors ligne
 ```
 
@@ -65,4 +66,4 @@ Les trois fichiers du dossier `api/` sont des fonctions Vercel. Ils n’accepten
 
 Pour essayer en local avec les relais : `npx vercel dev`, puis ouvre l’adresse affichée.
 
-Spotify n’est pas utilisable : ses conditions interdisent les jeux et quiz musicaux, et son API ne donne plus d’extraits aux nouvelles applis.
+Spotify n’est pas utilisable, même pour se connecter : ses conditions pour les développeurs interdisent les jeux et les quiz, et le mélange avec un autre service. Pour jouer avec ses playlists Spotify, on les copie vers Deezer (avec un site comme TuneMyMusic ou Soundiiz), puis on relie son profil Deezer.

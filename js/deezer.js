@@ -66,18 +66,34 @@ export async function themeTracks(th){
   return tracks(`/playlist/${pl.id}/tracks`);
 }
 
-/* Lien collé par l'utilisateur : lien complet ou lien de partage raccourci */
-export async function playlistFromLink(text){
-  const m = /deezer\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?playlist\/(\d+)/i.exec(text);
-  if(m) return m[1];
+/* Lien collé par l'utilisateur : lien complet ou lien de partage raccourci. Renvoie {playlist} ou {profile}. */
+export async function readLink(text){
+  const m = /deezer\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(playlist|profile)\/(\d+)/i.exec(text);
+  if(m) return {[m[1].toLowerCase()]: m[2]};
   const short = /https:\/\/(?:link\.deezer\.com|deezer\.page\.link)\/\S+/i.exec(text);
   if(!short) return null;
   const r = await fetch('/api/resolve?' + new URLSearchParams({url: short[0]}));
   const j = await r.json().catch(() => ({}));
-  if(!r.ok || !j.playlist) throw new Error(j.error || 'lien');
-  return j.playlist;
+  if(!r.ok || !(j.playlist || j.profile)) throw new Error(j.error || 'lien');
+  return j;
 }
 export const looksLikeLink = text => /deezer\.(com|page\.link)/i.test(text);
+
+/* « Mon Deezer » : on lit le profil public d'un joueur, sans mot de passe ni accès à son compte. */
+const person = u => ({id: u.id, name: u.name || 'Profil Deezer', picture: u.picture_medium || u.picture || ''});
+export async function searchUsers(q){
+  return ((await call('/search/user', {q, limit: 8})).data || []).map(person);
+}
+export const userInfo = async id => person(await call(`/user/${id}`));
+
+/* Ses playlists publiques, « Coups de cœur » en premier. Une playlist de moins de 4 titres ne suffit pas pour jouer. */
+export async function userPlaylists(id){
+  const j = await call(`/user/${id}/playlists`, {limit: 100});
+  return (j.data || []).filter(p => p.nb_tracks >= 4).map(p => ({
+    id: p.id, title: p.is_loved_track ? 'Coups de cœur' : p.title, n: p.nb_tracks, loved: !!p.is_loved_track,
+    cover: p.picture_medium || p.picture || '',
+  })).sort((a, b) => b.loved - a.loved);
+}
 
 /* Télécharge et décode un extrait. Les liens d'extraits expirent : s'il est périmé, on en redemande un neuf. */
 export async function loadPreview(s){

@@ -77,16 +77,33 @@
     <p class="small muted" id="manualnote" hidden>À chaque tour, le maître du jeu cherche un morceau sur Deezer et choisit sa pédale, sans que le joueur regarde. Il ne joue pas : ne l’ajoute pas à la liste des joueurs. Il faut internet.</p>
   </div>
 
-  <div class="block music auto">
+  <div class="block music">
     <span class="label" id="srclbl">La musique</span>
-    <div class="themes" id="themes" role="radiogroup" aria-labelledby="srclbl"></div>
-    <form class="search" id="search" role="search">
-      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Artiste, style ou lien Deezer" aria-label="Chercher une playlist Deezer ou coller un lien">
-      <button type="submit" aria-label="Chercher"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
-    </form>
-    <div class="results" id="results" hidden></div>
-    <p class="srcinfo" id="srcinfo" aria-live="polite"></p>
-    <input id="files" class="vh" type="file" accept="audio/*" multiple tabindex="-1" aria-hidden="true">
+    <div class="acct">
+      <button type="button" class="acctbtn" id="acctOpen" aria-expanded="false" aria-controls="acctForm"><span class="heart" aria-hidden="true">♥</span><span><b>Connecter mon Deezer</b><small>pour jouer avec mes playlists</small></span></button>
+      <div class="me" id="me" hidden></div>
+      <div class="acctform" id="acctForm" hidden>
+        <p class="small muted">Pas de mot de passe : l’appli lit seulement ce qui est public sur ton profil Deezer. Pour avoir le lien, ouvre ton profil dans Deezer et touche Partager.</p>
+        <p class="small muted">Tes playlists sont sur Spotify ? Copie-les vers Deezer avec un site comme TuneMyMusic ou Soundiiz, puis reviens ici.</p>
+        <form class="search" id="asearch">
+          <input id="aq" type="search" enterkeyhint="go" autocomplete="off" placeholder="Ton pseudo ou le lien de ton profil" aria-label="Ton pseudo Deezer ou le lien de ton profil">
+          <button type="submit" aria-label="Valider"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 12.5 10 17.5 19.5 7" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </form>
+        <div class="results" id="ausers" hidden></div>
+      </div>
+      <div class="themes" id="mylists" role="radiogroup" aria-label="Mes playlists Deezer" hidden></div>
+      <p class="srcinfo" id="acctinfo" aria-live="polite"></p>
+    </div>
+    <div class="block auto">
+      <div class="themes" id="themes" role="radiogroup" aria-labelledby="srclbl"></div>
+      <form class="search" id="search" role="search">
+        <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Artiste, style ou lien Deezer" aria-label="Chercher une playlist Deezer ou coller un lien">
+        <button type="submit" aria-label="Chercher"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+      </form>
+      <div class="results" id="results" hidden></div>
+      <p class="srcinfo" id="srcinfo" aria-live="polite"></p>
+      <input id="files" class="vh" type="file" accept="audio/*" multiple tabindex="-1" aria-hidden="true">
+    </div>
   </div>
 
   <div class="block auto">
@@ -141,6 +158,10 @@
       <input id="mq" type="search" enterkeyhint="search" autocomplete="off" placeholder="Titre ou artiste" aria-labelledby="mqlbl">
       <button type="submit" aria-label="Chercher"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
     </form>
+    <div class="mylists" id="mlistsbox" hidden>
+      <span class="small muted">Ou pioche dans tes playlists Deezer :</span>
+      <div class="themes" id="mlists"></div>
+    </div>
     <div class="results" id="mresults" hidden></div>
     <p class="srcinfo" id="minfo" aria-live="polite"></p>
     <button class="ghost" id="addSecond" hidden>Ajouter une 2e chanson (mashup)</button>
