@@ -41,6 +41,7 @@
       <div class="kind"><i style="--c:#1FC8B0;--t:#04231E">P</i><div><b>Pédale</b><span>Une pédale déforme l’extrait. Tu dis ta réponse à voix haute, les autres valident.</span></div><em>2 pts</em></div>
       <div class="kind"><i class="rainbow" style="--t:#1B1628">C</i><div><b>Chaos</b><span>Les pédales changent toutes les 3 secondes.</span></div><em>3 pts</em></div>
       <div class="kind"><i style="--c:#FFC93C;--t:#2A1F05">?</i><div><b>Chance</b><span>Quatre propositions s’affichent, à toi de choisir.</span></div><em>1 pt</em></div>
+      <div class="kind"><i class="split" style="--t:#1B1628">M</i><div><b>Mashup</b><span>Deux chansons mélangées dans une pédale. Trouve les deux.</span></div><em>2 pts × 2</em></div>
     </div>
   </div>
 
@@ -77,6 +78,22 @@
     <div class="results" id="results" hidden></div>
     <p class="srcinfo" id="srcinfo" aria-live="polite"></p>
     <input id="files" class="vh" type="file" accept="audio/*" multiple tabindex="-1" aria-hidden="true">
+  </div>
+
+  <div class="block">
+    <span class="label" id="mixlbl">Cartes mashup</span>
+    <p class="small muted">Deux chansons mélangées dans la même pédale. Il faut trouver les deux.</p>
+    <div class="speed" role="radiogroup" aria-labelledby="mixlbl">
+      <button role="radio" aria-checked="false" data-mix="off"><span class="led"></span><b>Sans</b><small>pas de mashup</small></button>
+      <button role="radio" aria-checked="true" data-mix="random"><span class="led"></span><b>Au hasard</b><small>2 styles tirés au sort</small></button>
+      <button role="radio" aria-checked="false" data-mix="pick"><span class="led"></span><b>Je choisis</b><small>les 2 styles</small></button>
+    </div>
+    <div class="mixpick" id="mixpick" hidden>
+      <select id="mixA" aria-label="Premier style du mashup"></select>
+      <span class="x" aria-hidden="true">×</span>
+      <select id="mixB" aria-label="Deuxième style du mashup"></select>
+    </div>
+    <p class="srcinfo" id="mixinfo" aria-live="polite"></p>
   </div>
 
   <div class="block">
@@ -129,6 +146,7 @@
     <div class="fxbar"><i id="fxbar"></i></div>
   </div>
 
+  <div class="mixrow" id="mixrow" hidden><span class="label">Mashup</span><b id="mixnames"></b></div>
   <div class="chainrow" id="chainrow"><span class="label">Entendues</span><div class="chain" id="chain"></div></div>
   <div class="answers" id="answers"></div>
   <button class="play" id="know">Je sais !</button>
@@ -151,6 +169,7 @@
     <p class="stats" id="stats"></p>
     <div class="chips" id="heard"></div>
     <div class="judge" id="judge" hidden><button class="play good" id="judgeYes">Trouvé !</button><button class="ghost" id="judgeNo">Raté</button></div>
+    <div class="judge three" id="judgeMix" hidden><button class="play good" data-found="2">Les 2<small>+4 pts</small></button><button class="play half" data-found="1">Une<small>+2 pts</small></button><button class="ghost" data-found="0">Aucune<small>0 pt</small></button></div>
     <button class="play" id="nextBtn">Joueur suivant</button>
   </div>
 </div>

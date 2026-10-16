@@ -9,6 +9,11 @@ Un blind test entre amis, sur un seul téléphone. Chacun son tour, on tire une 
 | Pédale | Une pédale déforme l’extrait. Le joueur répond à voix haute, les autres valident. | 2 |
 | Chaos | Les pédales changent toutes les 3 secondes. | 3 |
 | Chance | Quatre propositions s’affichent, il faut choisir la bonne. | 1 |
+| Mashup | Deux chansons de deux styles différents, mélangées dans la même pédale. Il faut trouver les deux. | 2 par chanson |
+
+Les styles des mashups se règlent avant la partie : tirés au hasard parmi les thèmes Deezer, choisis à la main (par exemple Rap français × Disney), ou pas de mashup du tout. Quand les mashups sont activés, il y en a au moins un par partie.
+
+Une fois la réponse donnée, le bouton **Sans pédale** fait réécouter l’extrait d’origine (les deux, pour un mashup).
 
 ## La musique
 
