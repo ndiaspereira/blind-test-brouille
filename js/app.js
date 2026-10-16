@@ -3,7 +3,7 @@ import {AC, normalize, mixBuffers} from './audio.js';
 import {TUNES, renderTune} from './music.js';
 import {FX, hasSide} from './fx.js';
 import {Player} from './player.js';
-import {THEMES, themeTracks, tracks, playlistInfo, searchPlaylists, searchTracks, playlistFromLink, looksLikeLink, loadPreview} from './deezer.js';
+import {THEMES, themeTracks, tracks, playlistInfo, searchPlaylists, searchTracks, readLink, looksLikeLink, loadPreview, searchUsers, userInfo, userPlaylists} from './deezer.js';
 
 const $ = id => document.getElementById(id);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -73,7 +73,10 @@ const SOURCES = [
   {id: 'tunes', name: 'Airs connus', note: 'sans internet', kind: 'tunes'},
   {id: 'files', name: 'Mes MP3', kind: 'files'},
 ];
-let custom = null;            // playlist choisie par recherche ou par lien
+let custom = null;            // playlist choisie par recherche, par lien ou dans « Mon Deezer » (mine: true)
+let me = store.get('deezerUser', null);   // profil Deezer relié : {id, name, picture}
+if(!me || !me.id) me = null;
+const mine = {lists: null, at: 0, failed: false, all: false, token: 0};   // ses playlists publiques
 let src = null;               // source sélectionnée
 let pool = null;              // morceaux prêts pour la partie
 let srcToken = 0, fileToken = 0, searchToken = 0;
@@ -88,9 +91,12 @@ function loadList(s){
   return p;
 }
 
-const allSources = () => custom ? [custom, ...SOURCES] : SOURCES;
+// une playlist de « Mon Deezer » s'affiche dans sa propre rangée, sauf si le profil a été changé entre-temps
+const inMyRow = s => !!(s && s.mine && me && mine.lists && mine.lists.some(p => String(p.id) === s.playlist));
+const allSources = () => custom && !inMyRow(custom) ? [custom, ...SOURCES] : SOURCES;
 function renderSources(){
   $('themes').innerHTML = allSources().map(s => `<button type="button" class="theme" role="radio" data-src="${esc(s.id)}" aria-checked="${src === s}">${esc(s.name)}${s.note ? `<small>${esc(s.note)}</small>` : ''}</button>`).join('');
+  renderMyLists();
 }
 function info(text, cls = ''){ $('srcinfo').className = 'srcinfo ' + cls; $('srcinfo').textContent = text; }
 function ready(songs){ pool = songs; updateStart(); levelInfo(); if(mix === 'pick' && [mixA, mixB].includes('main')) mixInfo(); }
@@ -145,11 +151,16 @@ $('search').addEventListener('submit', async e => {
   if(looksLikeLink(text)){
     info('Lecture du lien…', 'wait');
     try{
-      const id = await playlistFromLink(text);
-      if(!id) throw new Error('lien');
-      const meta = await playlistInfo(id);
+      const link = await readLink(text);
+      if(link && link.profile){   // le lien d'un profil : on le relie comme « Mon Deezer »
+        const u = await userInfo(link.profile);
+        if(token !== searchToken) return;
+        $('q').value = ''; info(''); connect(u); return;
+      }
+      if(!link || !link.playlist) throw new Error('lien');
+      const meta = await playlistInfo(link.playlist);
       if(token !== searchToken) return;
-      pickPlaylist({id, title: meta.title || 'Ta playlist'});
+      pickPlaylist({id: link.playlist, title: meta.title || 'Ta playlist'});
     }catch(err){ if(token === searchToken) info('Ce lien ne mène pas à une playlist Deezer publique.', 'err'); }
     return;
   }
@@ -164,17 +175,124 @@ $('search').addEventListener('submit', async e => {
     info('Choisis une playlist.');
   }catch(err){ if(token === searchToken) info('Deezer ne répond pas. Réessaie dans un instant.', 'err'); }
 });
-function pickPlaylist(p){
-  custom = {id: 'pl' + p.id, playlist: p.id, name: p.title, kind: 'deezer'};
+function pickPlaylist(p, isMine = false){
+  custom = {id: 'pl' + p.id, playlist: String(p.id), name: p.title, kind: 'deezer', mine: isMine};
   $('q').value = '';
+  if(isMine){ store.set('source', custom.id); store.set('myList', {id: p.id, title: p.title}); }   // on la retrouve à la prochaine partie
   selectSource(custom);
 }
 
 function initSource(){
   if(src) return;
-  const s = SOURCES.find(x => x.id === store.get('source', 'top'));
+  const id = store.get('source', 'top'), saved = store.get('myList', null);
+  if(me && saved && id === 'pl' + saved.id){
+    custom = {id, playlist: String(saved.id), name: saved.title, kind: 'deezer', mine: true};
+    selectSource(custom, true); return;
+  }
+  const s = SOURCES.find(x => x.id === id);
   selectSource(s && s.kind !== 'files' ? s : SOURCES[0], true);
 }
+
+/* ================= Mon Deezer : le profil public du joueur, sans mot de passe ================= */
+let acctToken = 0;
+function ainfo(text, cls = ''){ $('acctinfo').className = 'srcinfo ' + cls; $('acctinfo').textContent = text; }
+function renderAccount(){
+  const l = mine.lists;
+  $('acctOpen').hidden = !!me;
+  $('acctOpen').setAttribute('aria-expanded', String(!$('acctForm').hidden));
+  $('me').hidden = !me;
+  if(me){
+    const line = mine.failed ? '<button type="button" class="linkish" data-act="retry">Réessayer</button>'
+      : !l ? 'Chargement des playlists…'
+      : l.length ? `${plural(l.length, 'playlist')} ${l.length > 1 ? 'publiques' : 'publique'}`
+      : 'Aucune playlist publique · <button type="button" class="linkish" data-act="retry">Actualiser</button>';
+    $('me').innerHTML = `${me.picture ? `<img src="${esc(me.picture)}" alt="" width="44" height="44">` : '<span class="noimg"></span>'}<span class="meid"><span class="label">Mon Deezer</span><b>${esc(me.name)}</b><small>${line}</small></span><button type="button" class="swap" data-act="change">Changer</button>`;
+  }
+  renderSources();   // redessine aussi la rangée de ses playlists
+}
+function renderMyLists(){
+  const box = $('mylists'), l = mine.lists;
+  box.hidden = !(me && l && l.length && gameMode === 'auto');
+  if(box.hidden){ box.innerHTML = ''; return; }
+  const shown = mine.all || l.length <= 8 ? l : l.slice(0, 7);
+  box.innerHTML = shown.map(p => `<button type="button" class="theme" role="radio" data-pl="${p.id}" aria-checked="${src === custom && inMyRow(src) && src.playlist === String(p.id)}">${p.loved ? '<span class="heart" aria-hidden="true">♥</span>' : ''}${esc(p.title)}<small>${p.n}</small></button>`).join('')
+    + (shown.length < l.length ? `<button type="button" class="theme more" data-more>+ ${l.length - shown.length} autres</button>` : '');
+}
+async function loadMine(force = false){
+  if(!me) return;
+  if(!force && mine.lists && !mine.failed && Date.now() - mine.at < 10 * 60e3){ renderAccount(); return; }
+  const token = ++mine.token, who = me;
+  mine.failed = false;
+  if(force) mine.lists = null;
+  renderAccount();
+  try{
+    const l = await userPlaylists(who.id);
+    if(token !== mine.token || me !== who) return;
+    mine.lists = l; mine.at = Date.now();
+    renderAccount();
+    ainfo(l.length ? '' : 'Dans Deezer, rends au moins une playlist publique (4 titres minimum), puis touche Actualiser.');
+  }catch(e){
+    if(token !== mine.token || me !== who) return;
+    mine.failed = true; renderAccount();
+    ainfo('Deezer ne répond pas, tes playlists ne sont pas chargées.', 'err');
+  }
+}
+async function connect(u){
+  me = {id: u.id, name: u.name, picture: u.picture};
+  store.set('deezerUser', me);
+  mine.lists = null; mine.all = false;
+  $('acctForm').hidden = true; $('ausers').hidden = true; $('aq').value = ''; ainfo('');
+  await loadMine(true);
+  // en mode automatique, ses coups de cœur (ou sa première playlist) deviennent tout de suite la musique de la partie,
+  // sauf si une de ses playlists est déjà choisie
+  const l = me && me.id === u.id && mine.lists;
+  if(gameMode === 'auto' && l && l.length && !(src && src.mine && l.some(p => String(p.id) === src.playlist))) pickPlaylist(l[0], true);
+}
+$('acctOpen').addEventListener('click', () => {
+  const open = $('acctForm').hidden;
+  $('acctForm').hidden = !open; renderAccount();
+  if(open) $('aq').focus();
+});
+$('me').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if(!b) return;
+  if(b.dataset.act === 'retry'){ loadMine(true); return; }
+  me = null; mine.lists = null; mine.failed = false; mine.token++; store.set('deezerUser', null);   // « Changer » : on oublie ce profil
+  $('acctForm').hidden = false; ainfo(''); renderAccount(); $('aq').focus();
+});
+$('mylists').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  if(b.dataset.more !== undefined){ mine.all = true; renderMyLists(); return; }
+  AC();
+  const p = mine.lists.find(x => String(x.id) === b.dataset.pl);
+  if(p) pickPlaylist(p, true);
+});
+$('asearch').addEventListener('submit', async e => {
+  e.preventDefault();
+  const text = $('aq').value.trim(); if(!text) return;
+  $('aq').blur();
+  const box = $('ausers'), token = ++acctToken;
+  box.hidden = true;
+  try{
+    if(looksLikeLink(text) || /^\d{2,}$/.test(text)){   // lien du profil, ou son numéro
+      ainfo('Lecture du profil…', 'wait');
+      const link = /^\d+$/.test(text) ? {profile: text} : await readLink(text);
+      if(token !== acctToken) return;
+      if(link && link.playlist && !link.profile){ ainfo('Ce lien est celui d’une playlist. Ici, il faut le lien de ton profil (ou ton pseudo).', 'err'); return; }
+      if(!link || !link.profile) throw new Error('lien');
+      const u = await userInfo(link.profile);
+      if(token === acctToken) connect(u);
+      return;
+    }
+    ainfo(`Recherche de « ${text} »…`, 'wait');
+    const found = await searchUsers(text);
+    if(token !== acctToken) return;
+    if(!found.length){ ainfo(`Aucun profil Deezer trouvé pour « ${text} ». Essaie avec le lien de ton profil.`, 'err'); return; }
+    box.innerHTML = found.map((u, i) => `<button type="button" class="res user" data-i="${i}">${u.picture ? `<img src="${esc(u.picture)}" alt="" width="48" height="48" loading="lazy">` : '<span class="noimg"></span>'}<span><b>${esc(u.name)}</b><small>Profil Deezer</small></span></button>`).join('');
+    box.onclick = ev => { const b = ev.target.closest('.res'); if(b) connect(found[+b.dataset.i]); };
+    box.hidden = false;
+    ainfo('Touche ton profil.');
+  }catch(err){ if(token === acctToken) ainfo(looksLikeLink(text) || /^\d+$/.test(text) ? 'Ce lien ne mène pas à un profil Deezer.' : 'Deezer ne répond pas. Réessaie dans un instant.', 'err'); }
+});
 
 /* ================= Mashups : deux chansons mélangées, de deux styles ================= */
 const MIX_CHOICES = [{id: 'main', name: 'Musique de la partie'}, ...THEMES.map(t => ({id: t.id, name: t.name})), {id: 'tunes', name: 'Airs connus'}];
@@ -220,6 +338,7 @@ function renderMode(){
   document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === gameMode)));
   document.querySelectorAll('#setup .auto').forEach(el => { el.hidden = gameMode !== 'auto'; });
   $('manualnote').hidden = gameMode !== 'manual';
+  renderMyLists();
   updateStart();
 }
 document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { gameMode = b.dataset.mode; store.set('mode', gameMode); renderMode(); }));
@@ -259,7 +378,7 @@ const bump = el => { if(reduced) return; el.classList.remove('pop'); void el.off
 const chips = list => list.map(f => `<span class="chip"><i style="--c:${f.c}"></i>${esc(f.name)}</span>`).join('');
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
 
-$('play').addEventListener('click', () => { AC(); labStop(); show('setup'); initSource(); renderMode(); renderLevel(); renderMix(); });
+$('play').addEventListener('click', () => { AC(); labStop(); show('setup'); initSource(); renderMode(); renderLevel(); renderMix(); renderAccount(); loadMine(); });
 $('setupBack').addEventListener('click', () => show('home'));
 $('startParty').addEventListener('click', () => {
   if(gameMode === 'auto' && !pool) return;
@@ -620,8 +739,33 @@ function showMaster(){
   $('mhide').textContent = `${p.name}, ne regarde pas l’écran !`;
   master.picks = []; master.slot = 0; master.fx = 'random'; master.token++;
   $('mq').value = ''; $('mresults').hidden = true; minfo('');
-  renderPicks(); renderFxChips();
+  renderPicks(); renderFxChips(); renderMasterLists();
 }
+/* Si un compte Deezer est relié, le maître du jeu peut piocher dans ses playlists */
+function renderMasterLists(){
+  const l = me && mine.lists;
+  $('mlistsbox').hidden = !(l && l.length);
+  if(l && l.length) $('mlists').innerHTML = l.map(p => `<button type="button" class="theme" data-pl="${p.id}">${p.loved ? '<span class="heart" aria-hidden="true">♥</span>' : ''}${esc(p.title)}</button>`).join('');
+}
+function showFound(found){
+  master.found = found;
+  $('mresults').innerHTML = found.map((s, i) => `<button type="button" class="res" data-i="${i}">${s.cover ? `<img src="${esc(s.cover)}" alt="" width="48" height="48" loading="lazy">` : '<span class="noimg"></span>'}<span><b>${esc(s.title)}</b><small>${esc(s.artist)}</small></span></button>`).join('');
+  $('mresults').hidden = false;
+}
+$('mlists').addEventListener('click', async e => {
+  const b = e.target.closest('[data-pl]'); if(!b) return;
+  const p = mine.lists.find(x => String(x.id) === b.dataset.pl); if(!p) return;
+  const token = ++master.token;
+  minfo(`Ouverture de « ${p.title} »…`, 'wait');
+  try{
+    const songs = await loadList({id: 'pl' + p.id, playlist: String(p.id)});
+    if(token !== master.token) return;
+    const left = songs.filter(s => !master.picks.some(x => x.id === s.id));
+    if(!left.length){ $('mresults').hidden = true; minfo('Aucun extrait dans cette playlist.', 'err'); return; }
+    showFound(shuffle(left).slice(0, 10));
+    minfo(`${master.found.length > 1 ? master.found.length + ' morceaux' : 'Un morceau'} au hasard de « ${p.title} ». Touche encore la playlist pour en voir d’autres.`);
+  }catch(err){ if(token === master.token) minfo('Deezer ne répond pas. Réessaie dans un instant.', 'err'); }
+});
 function renderPicks(){
   const two = master.picks.length > 1;
   $('picked').innerHTML = master.picks.map((s, i) => `<div class="pick">${s.cover ? `<img class="cover" src="${esc(s.cover)}" alt="" width="52" height="52">` : '<span class="noimg"></span>'}<span><span class="label">${two ? `Chanson ${i + 1}` : 'À deviner'}</span><b>${esc(s.title)}</b><span class="by">${esc(s.artist)}</span></span><button type="button" class="premove" data-i="${i}" aria-label="Retirer ${esc(s.title)}">✕</button></div>`).join('');
@@ -650,9 +794,7 @@ $('msearch').addEventListener('submit', async e => {
     const found = (await searchTracks(q)).slice(0, 8);
     if(token !== master.token) return;
     if(!found.length){ $('mresults').hidden = true; minfo(`Aucun extrait trouvé pour « ${q} ».`, 'err'); return; }
-    master.found = found;
-    $('mresults').innerHTML = found.map((s, i) => `<button type="button" class="res" data-i="${i}">${s.cover ? `<img src="${esc(s.cover)}" alt="" width="48" height="48" loading="lazy">` : '<span class="noimg"></span>'}<span><b>${esc(s.title)}</b><small>${esc(s.artist)}</small></span></button>`).join('');
-    $('mresults').hidden = false;
+    showFound(found);
     minfo('Touche le morceau à faire deviner.');
   }catch(err){ if(token === master.token) minfo('Deezer ne répond pas. Réessaie dans un instant.', 'err'); }
 });

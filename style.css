@@ -101,6 +101,26 @@ button:disabled{cursor:default}
 .srcinfo{min-height:1.4em;font-size:.88rem;color:var(--muted)}
 .srcinfo.ok::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--good);margin-right:8px;vertical-align:1px}
 .srcinfo.err{color:var(--bad)}
+.acct{display:flex;flex-direction:column;gap:10px}
+.acctbtn{display:grid;grid-template-columns:44px minmax(0,1fr);align-items:center;gap:12px;padding:9px 14px 9px 9px;border-radius:16px;background:var(--raised);border:2px dashed var(--line);text-align:left}
+.acctbtn[aria-expanded="true"]{border-style:solid;border-color:var(--gold)}
+.acctbtn b,.me b{display:block;font-weight:800;line-height:1.25}
+.acctbtn small,.me small{display:block;color:var(--muted);font-size:.84rem;line-height:1.35}
+.heart{color:var(--accent)}
+.acctbtn .heart{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:var(--raised-2);font-size:1.3rem;line-height:1}
+.acctform{display:flex;flex-direction:column;gap:10px}
+.me{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:12px;padding:8px 10px 8px 8px;border-radius:16px;background:var(--raised);border:2px solid var(--line)}
+.me img,.me .noimg{display:block;width:44px;height:44px;border-radius:50%;object-fit:cover;background:var(--raised-2)}
+.me .meid{min-width:0}
+#acctinfo:empty{display:none}
+.me .label{display:block;font-size:.64rem}
+.me b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.swap{font-family:var(--mono);font-size:.75rem;padding:9px 12px;border-radius:10px;background:var(--raised-2);white-space:nowrap}
+.linkish{color:var(--gold);text-decoration:underline;text-underline-offset:2px}
+.res.user img,.res.user .noimg{border-radius:50%}
+.theme .heart{margin-right:6px}
+.theme.more{border-style:dashed;color:var(--muted)}
+.mylists{display:flex;flex-direction:column;gap:8px}
 /* ---------- maître du jeu ---------- */
 .hideme{align-self:flex-start;padding:6px 12px;border-radius:999px;background:var(--bad);color:#2B0606;font-weight:800;font-size:.9rem}
 .picked{display:flex;flex-direction:column;gap:8px}
